@@ -64,6 +64,7 @@ window.selectProjectFile = function() {
                 updateTextBlocks(data.textBlocks);
                 if (data.thumbnails && data.thumbnails.length > 0) {
                     generateThumbnails(data.thumbnails, data.directory);
+                    highlightCurrentThumbnail(window.currentImg);
                 } else {
                     console.warn('No thumbnails received');
                 }
@@ -134,6 +135,7 @@ function loadImage(key, directory) {
             window.currentImg = key;
             window.canvasControls.loadLayers(data.originalImageUrl, data.inpaintedImageUrl, data.textBlocks);
             updateTextBlocks(data.textBlocks, entries, key);
+            highlightCurrentThumbnail(key);
         } else {
             showToast('加载图片失败：' + (data.error || '未知错误'), 'error');
         }
@@ -192,6 +194,19 @@ function updateTextBlocks(textBlocks, entries, pageKey) {
 
         footerDiv.appendChild(eyeBtn);
         card.appendChild(footerDiv);
+
+        // 新增：鼠标悬停时高亮画布上对应的文本块（蓝色阴影）
+        card.addEventListener('mouseenter', () => {
+            if (window.canvasControls && window.canvasControls.highlightTextBlock) {
+                window.canvasControls.highlightTextBlock(index, true);
+            }
+        });
+        card.addEventListener('mouseleave', () => {
+            if (window.canvasControls && window.canvasControls.highlightTextBlock) {
+                window.canvasControls.highlightTextBlock(index, false);
+            }
+        });
+
         container.appendChild(card);
     });
 }
@@ -224,6 +239,7 @@ window.loadProjectFromData = function(data) {
         updateTextBlocks(data.textBlocks);
         if (data.thumbnails && data.thumbnails.length > 0) {
             generateThumbnails(data.thumbnails, data.directory);
+            highlightCurrentThumbnail(window.currentImg);
         } else {
             console.warn('No thumbnails received');
         }
@@ -283,7 +299,15 @@ async function saveImages(directory, key, entries) {
         imageToSave = comicImage;
     }
     if (imageToSave) {
-        const imageDataURL = imageToSave.toDataURL({ format: 'png' });
+        // 创建离屏 canvas，以不透明度 1 绘制图片，忽略滑块透明度
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = imageWidth;
+        offCanvas.height = imageHeight;
+        const offCtx = offCanvas.getContext('2d');
+        // 获取原生图像元素（原始图片数据）
+        const imgElement = imageToSave.getElement();
+        offCtx.drawImage(imgElement, 0, 0, imageWidth, imageHeight);
+        const imageDataURL = offCanvas.toDataURL('image/png');
         const imageBlob = dataURItoBlob(imageDataURL);
         const formData = new FormData();
         formData.append('directory', directory);
@@ -314,3 +338,65 @@ async function saveImages(directory, key, entries) {
         throw new Error('保存结果图失败：' + (resResult.error || '未知错误'));
     }
 }
+
+// 高亮当前页缩略图并滚动到中间
+function highlightCurrentThumbnail(currentKey) {
+    const scrollContainer = document.querySelector('[name="thumbnail-list"]');
+    if (!scrollContainer) return;
+    const innerContainer = scrollContainer.querySelector('.thumbnail-container');
+    if (!innerContainer) return;
+    const cards = innerContainer.querySelectorAll('.thumbnail-card');
+    let currentCard = null;
+    cards.forEach(card => {
+        const key = card.getAttribute('data-key');
+        if (key === currentKey) {
+            card.style.border = '2px solid #2196f3';
+            card.style.boxShadow = '0 0 5px rgba(33, 150, 243, 0.5)';
+            currentCard = card;
+        } else {
+            card.style.border = '';
+            card.style.boxShadow = '';
+        }
+    });
+
+    if (currentCard) {
+        // 计算并设置滚动位置，使当前卡片在可视区域垂直居中
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const cardRect = currentCard.getBoundingClientRect();
+        const relativeTop = cardRect.top - containerRect.top;
+        const targetScrollTop = scrollContainer.scrollTop + relativeTop - (scrollContainer.clientHeight / 2) + (cardRect.height / 2);
+        scrollContainer.scrollTop = targetScrollTop;
+    }
+}
+
+// 上一页
+window.goToPrevPage = function() {
+    if (!window.projectPages || !window.currentImg || !window.projectDirectory) {
+        showToast('没有加载项目', 'error');
+        return;
+    }
+    const keys = Object.keys(window.projectPages);
+    const currentIndex = keys.indexOf(window.currentImg);
+    if (currentIndex <= 0) {
+        showToast('已经是第一页', 'info');
+        return;
+    }
+    const prevKey = keys[currentIndex - 1];
+    loadImage(prevKey, window.projectDirectory);
+};
+
+// 下一页
+window.goToNextPage = function() {
+    if (!window.projectPages || !window.currentImg || !window.projectDirectory) {
+        showToast('没有加载项目', 'error');
+        return;
+    }
+    const keys = Object.keys(window.projectPages);
+    const currentIndex = keys.indexOf(window.currentImg);
+    if (currentIndex === -1 || currentIndex >= keys.length - 1) {
+        showToast('已经是最后一页', 'info');
+        return;
+    }
+    const nextKey = keys[currentIndex + 1];
+    loadImage(nextKey, window.projectDirectory);
+};

@@ -102,4 +102,15 @@ class Inpainter:
         self._load_images()
         self._validate_images()
         result = self._execute_inpaint()
+        
+        # 确保图片为 RGB 模式，去除透明度
+        if result.mode == 'RGBA':
+            # 创建白色背景并合成，保留 RGB 通道，丢弃 alpha
+            background = Image.new('RGB', result.size, (255, 255, 255))
+            # 如果 alpha 通道存在，将其作为蒙版合成到白色背景上
+            background.paste(result, mask=result.split()[3])
+            result = background
+        elif result.mode != 'RGB':
+            result = result.convert('RGB')
+        
         result.save(self.output_path, format="PNG", optimize=True, compress_level=9)

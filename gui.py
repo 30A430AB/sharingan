@@ -133,6 +133,12 @@ with ui.element('div').classes('fixed top-0 left-0 w-full h-full').style('margin
                             save_btn = ui.button(icon='save', color='transparent') \
                                 .props('flat dense') \
                                 .on('click', lambda: ui.run_javascript('window.saveProject()'))
+                            prev_btn = ui.button(icon='navigate_before', color='transparent') \
+                                .props('flat dense') \
+                                .on('click', lambda: ui.run_javascript('window.goToPrevPage()'))
+                            next_btn = ui.button(icon='navigate_next', color='transparent') \
+                                .props('flat dense') \
+                                .on('click', lambda: ui.run_javascript('window.goToNextPage()'))
                         with ui.element('div').style('margin-left: auto; display: flex; align-items: center;'):
                             algorithm_label = ui.label('patch_match') \
                                 .style('padding:4px 12px; background:#f0f0f0; border-radius:4px; cursor:pointer; font-size:14px;') \
@@ -349,7 +355,7 @@ async def get_image(request: Request):
     directory = data.get('directory')
     key = data.get('key')
     entries = data.get('entries', [])
-    print(f"/get_image called: key={key}, entries count={len(entries)}")
+    # print(f"/get_image called: key={key}, entries count={len(entries)}")
     if not directory or not key:
         return {'error': 'Missing directory or key'}
     original_url = None
@@ -392,7 +398,7 @@ async def get_image(request: Request):
                     print(f"读取 inpainted 图片失败 {key}: {e}")
                 break
     text_blocks = generate_text_blocks(directory, key, entries)
-    print(f"Generated {len(text_blocks)} text blocks")
+    # print(f"Generated {len(text_blocks)} text blocks")
     return {
         'originalImageUrl': original_url,
         'inpaintedImageUrl': inpainted_url,
@@ -548,7 +554,7 @@ async def save_project(request: Request):
                 'directory': directory,
                 'pages': pages,
                 'current_img': current_img
-            }, f, ensure_ascii=False, indent=2)
+            }, f, ensure_ascii=False, separators=(',', ':'))
         return {'success': True, 'path': save_path}
     except Exception as e:
         print(f"保存失败: {e}")

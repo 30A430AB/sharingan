@@ -14,7 +14,8 @@ let currentScale = 1;
 let imageWidth = 1920;
 let imageHeight = 1080;
 let currentRawOpacity = 100;
-let currentTextOpacity = 100;
+let currentTextOpacity = 100;          // 修复层透明度
+let currentTextLayerOpacity = 100;      // 新增：文本层透明度，默认100
 
 let isDraggingText = false;
 let draggedTextIndex = -1;
@@ -588,7 +589,16 @@ function loadLayers(originalUrl, inpaintedUrl, textBlocks) {
                         }
                     });
                 });
-                return Promise.all(textPromises);
+                return Promise.all(textPromises).then(() => {
+                    // 应用当前文本层透明度
+                    textImages.forEach(img => {
+                        img.set('opacity', currentTextLayerOpacity / 100);
+                    });
+                    // 可选：再次确保修复层透明度正确（防止被覆盖）
+                    if (inpaintedImage) {
+                        inpaintedImage.set('opacity', currentTextOpacity / 100);
+                    }
+                });
             }
         })
         .then(() => {
@@ -888,7 +898,9 @@ window.canvasControls = {
         }
     },
 
+    // 修改：保存当前文本层透明度值并应用到现有文本块
     setTextLayerOpacity: function(value) {
+        currentTextLayerOpacity = value;
         if (textImages && textImages.length > 0) {
             textImages.forEach(img => {
                 img.set('opacity', value / 100);
@@ -927,6 +939,19 @@ window.canvasControls = {
         }
         console.log('当前页面数据已同步到项目数据');
     },
+
+    // 新增：高亮或取消高亮指定索引的文本块（使用与鼠标悬停相同的蓝色阴影）
+    highlightTextBlock: function(index, highlight) {
+        if (!textImages || index < 0 || index >= textImages.length) return;
+        const obj = textImages[index];
+        if (!obj) return;
+        if (highlight) {
+            obj.set('shadow', '0 0 10px rgba(74, 144, 226, 0.8)');
+        } else {
+            obj.set('shadow', null);
+        }
+        canvas.requestRenderAll();
+    }
 };
 
 function cropImage(source, x, y, w, h) {

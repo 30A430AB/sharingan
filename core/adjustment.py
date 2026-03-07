@@ -14,7 +14,7 @@ class CoordinateAdjuster:
         self.logger = logging.getLogger('CoordinateAdjuster')
 
     def _get_image_size(self, base_name: str) -> tuple:
-        """安全获取图片尺寸 - 使用mask文件格式"""
+        """获取图片尺寸 - 使用mask文件格式"""
         mask_path = os.path.join(self.mask_dir, f"mask-{base_name}.png")
         try:
             with Image.open(mask_path) as img:

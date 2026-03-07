@@ -4,9 +4,28 @@
 
 ![screenshot](assets/screenshot.png)
 
-| raw | text | result |
-|-------|-------|-------|
-| ![raw](assets/raw.jpg) | ![text](assets/text.jpg) | ![result](assets/result.png) |
+<table style="border-collapse: collapse; border: none; width: 100%;">
+  <thead>
+    <tr>
+      <th style="border: none; padding: 0 0 10px 0; text-align: center;">raw</th>
+      <th style="border: none; padding: 0 0 10px 0; text-align: center;">text</th>
+      <th style="border: none; padding: 0 0 10px 0; text-align: center;">result</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="border: none; padding: 0; text-align: center;">
+        <img src="assets/raw.jpg" style="width: 100%; height: auto;" alt="raw">
+      </td>
+      <td style="border: none; padding: 0; text-align: center;">
+        <img src="assets/text.jpg" style="width: 100%; height: auto;" alt="text">
+      </td>
+      <td style="border: none; padding: 0; text-align: center;">
+        <img src="assets/result.png" style="width: 100%; height: auto;" alt="result">
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 ## 快速开始
 
@@ -50,5 +69,5 @@ python gui.py
 本项目使用了以下开源项目
 - [BallonsTranslator](https://github.com/dmMaze/BallonsTranslator)
 - [comic-text-detector](https://github.com/dmMaze/comic-text-detector)
-- [patchmatch](https://github.com/vacancy/PyPatchMatch) [本程序使用修改版](https://github.com/dmMaze/PyPatchMatchInpaint)
-- [lama](https://github.com/advimman/lama) 本程序使用微调版
+- [patchmatch](https://github.com/vacancy/PyPatchMatch) [修改版](https://github.com/dmMaze/PyPatchMatchInpaint)
+- [lama](https://github.com/advimman/lama)(本程序使用微调版) [simple-lama-inpainting](https://github.com/enesmsahin/simple-lama-inpainting)

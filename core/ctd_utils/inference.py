@@ -17,6 +17,18 @@ from pathlib import Path
 from typing import Optional, Union
 
 
+def safe_get_images(directory):
+    """遍历目录获取所有图片文件）"""
+    image_extensions = {'.jpg', '.jpeg', '.png'}
+    files = []
+    try:
+        for entry in Path(directory).iterdir():
+            if entry.is_file() and entry.suffix.lower() in image_extensions:
+                files.append(str(entry.resolve()))  # 返回绝对路径字符串
+    except FileNotFoundError:
+        pass
+    return files
+
 def model2annotations(model_path, img_dir_list, save_dir, save_json=False, progress_callback: Optional[callable] = None):
     if isinstance(img_dir_list, str):
         img_dir_list = [img_dir_list]
@@ -34,7 +46,7 @@ def model2annotations(model_path, img_dir_list, save_dir, save_json=False, progr
     
     imglist = []
     for img_dir in img_dir_list:
-        imglist += find_all_imgs(img_dir, abs_path=True)
+        imglist += safe_get_images(img_dir)
     
     total = len(imglist)
     for idx, img_path in enumerate(imglist):

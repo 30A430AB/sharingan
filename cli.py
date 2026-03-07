@@ -1,7 +1,8 @@
-import logging
 import argparse
 from pathlib import Path
+import sys
 from natsort import natsorted
+from loguru import logger
 
 from core.detection import ComicTextDetector
 from core.adjustment import CoordinateAdjuster
@@ -14,8 +15,59 @@ from core.image_utils import (
 )
 
 
+def configure_logging():
+    """配置 loguru 日志输出和重定向（仅在命令行模式下调用）"""
+    # 保存原始的 stdout/stderr
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+
+    # 移除 loguru 默认的 stderr 输出
+    logger.remove()
+
+    # 控制台输出到原始 stdout，避免循环
+    logger.add(
+        original_stdout,
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {name}:{function}:{line} - {message}",
+        level="INFO",
+        colorize=True
+    )
+
+    # 重定向 print → loguru
+    class StreamToLogger:
+        def __init__(self, logger, level="INFO", original_stream=None):
+            self.logger = logger
+            self.level = level
+            self.original_stream = original_stream  # 可选，用于 flush
+
+        def write(self, message):
+            if message.strip():
+                self.logger.log(self.level, message.rstrip())
+
+        def flush(self):
+            if self.original_stream:
+                self.original_stream.flush()
+
+        def isatty(self):
+            # 防止依赖 isatty 的库（如 uvicorn）报错
+            return False
+
+    sys.stdout = StreamToLogger(logger, "INFO", original_stdout)
+    sys.stderr = StreamToLogger(logger, "ERROR", original_stderr)
+
+    # 拦截标准 logging 模块的日志，使其也通过 loguru 输出
+    import logging
+    class InterceptHandler(logging.Handler):
+        def emit(self, record):
+            try:
+                level = logger.level(record.levelname).name
+            except ValueError:
+                level = record.levelno
+            logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
+
+    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+
 class MangaTranslationPipeline:
-    """漫画翻译处理流水线"""
+    """漫画重嵌处理流水线"""
     
     def __init__(self, raw_dir, text_dir, model_path, inpaint_algorithm='patchmatch', output_dir=None):
         """
@@ -34,24 +86,31 @@ class MangaTranslationPipeline:
         self.output_dir = Path(output_dir) if output_dir else self.raw_dir
         
         # 设置日志
-        self.logger = self._setup_logging()
+        self.logger = logger.bind(name='MangaPipeline')
         
         # 创建输出目录
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-    def _setup_logging(self):
-        """设置日志格式"""
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%H:%M:%S'
-        )
-        return logging.getLogger('MangaPipeline')
+    # def _setup_logging(self):
+    #     """设置日志格式"""
+    #     logging.basicConfig(
+    #         level=logging.INFO,
+    #         format='%(asctime)s - %(levelname)s - %(message)s',
+    #         datefmt='%H:%M:%S'
+    #     )
+    #     return logging.getLogger('MangaPipeline')
     
     def _get_sorted_images(self, directory):
-        """获取自然排序的图片文件列表"""
-        image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'}
-        image_files = [f for f in directory.glob("*") if f.suffix.lower() in image_extensions]
+        """获取自然排序的图片文件列表（安全遍历）"""
+        from natsort import natsorted
+        image_extensions = {'.jpg', '.jpeg', '.png'}
+        image_files = []
+        try:
+            for entry in Path(directory).iterdir():
+                if entry.is_file() and entry.suffix.lower() in image_extensions:
+                    image_files.append(entry)
+        except FileNotFoundError:
+            pass
         return natsorted(image_files, key=lambda x: x.name)
     
     def prepare_directories(self):
@@ -71,8 +130,8 @@ class MangaTranslationPipeline:
         return dirs
     
     def step1_resize_images(self):
-        """步骤1: 调整熟肉图片大小与生肉匹配"""
-        self.logger.info("步骤1: 调整熟肉图片大小")
+        """步骤1: 调整熟肉图片尺寸与生肉匹配"""
+        self.logger.info("步骤1: 调整熟肉图片尺寸")
         
         resize_count = resize_text_images_to_match_raw(
             raw_dir=str(self.raw_dir),
@@ -81,7 +140,7 @@ class MangaTranslationPipeline:
         )
         
         if resize_count == 0:
-            raise Exception("没有成功调整任何熟肉图片大小")
+            raise Exception("没有成功调整任何熟肉图片尺寸")
             
         self.logger.info(f"成功调整 {resize_count} 张图片")
         return True
@@ -211,7 +270,7 @@ class MangaTranslationPipeline:
     
     def run(self):
         """运行完整处理流水线"""
-        self.logger.info("开始漫画翻译处理流水线")
+        self.logger.info("开始漫画重嵌处理")
         self.logger.info(f"生肉目录: {self.raw_dir}")
         self.logger.info(f"熟肉目录: {self.text_dir}")
         self.logger.info(f"输出目录: {self.output_dir}")

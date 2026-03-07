@@ -52,7 +52,8 @@ python cli.py <原始图片文件夹路径> <文本图片文件夹路径>
 
 >[!NOTE]
 >原始图片与文本图片文件名必须一致
->文本图片分辨率可能被改变，请提前做好备份
+>文本图片尺寸可能被改变，请提前做好备份
+>
 
 ### GUI 模式
 ```bash
@@ -71,3 +72,4 @@ python gui.py
 - [comic-text-detector](https://github.com/dmMaze/comic-text-detector)
 - [patchmatch](https://github.com/vacancy/PyPatchMatch) [修改版](https://github.com/dmMaze/PyPatchMatchInpaint)
 - [lama](https://github.com/advimman/lama)(本程序使用微调版) [simple-lama-inpainting](https://github.com/enesmsahin/simple-lama-inpainting)
+

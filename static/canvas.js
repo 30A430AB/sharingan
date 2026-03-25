@@ -98,7 +98,6 @@ function initCanvas() {
 }
 
 function switchTool(tool) {
-    console.log('switchTool called with:', tool);
     currentTool = tool;
 
     if (isDrawingRect && tempRect) {
@@ -438,11 +437,47 @@ function onCanvasMouseUp(opt) {
             return;
         }
 
+        // 获取矩形在画布坐标系中的位置
+        let left = tempRect.left;
+        let top = tempRect.top;
+        let right = left + width;
+        let bottom = top + height;
+
+        // 获取图片的实际边界（图片坐标系，原尺寸）
+        // 注意：comicImage 在加载后已经设置了尺寸 imageWidth/imageHeight
+        const imgLeft = 0;
+        const imgTop = 0;
+        const imgRight = imageWidth;
+        const imgBottom = imageHeight;
+
+        // 计算与图片区域的交集
+        const intersectLeft = Math.max(left, imgLeft);
+        const intersectTop = Math.max(top, imgTop);
+        const intersectRight = Math.min(right, imgRight);
+        const intersectBottom = Math.min(bottom, imgBottom);
+        const intersectWidth = intersectRight - intersectLeft;
+        const intersectHeight = intersectBottom - intersectTop;
+
+        // 如果没有交集（矩形完全在图片外部），则不进行修复
+        if (intersectWidth <= 0 || intersectHeight <= 0) {
+            canvas.remove(tempRect);
+            tempRect = null;
+            rectStartPoint = null;
+            canvas.renderAll();
+            return;
+        }
+
+        // 使用裁剪后的矩形坐标和尺寸（相对于图片）
+        const x = intersectLeft;
+        const y = intersectTop;
+        const w = intersectWidth;
+        const h = intersectHeight;
+
         isProcessing = true;
         canvas.isDrawingMode = false;
         canvas.selection = false;
 
-        processingRect = tempRect;
+        processingRect = tempRect; // 保留原始矩形用于删除
         tempRect = null;
         rectStartPoint = null;
 
@@ -456,10 +491,10 @@ function onCanvasMouseUp(opt) {
 
                 const formData = new FormData();
                 formData.append('image', dataURItoBlob(imageDataURL), 'image.png');
-                formData.append('x', Math.round(processingRect.left));
-                formData.append('y', Math.round(processingRect.top));
-                formData.append('w', Math.round(processingRect.width));
-                formData.append('h', Math.round(processingRect.height));
+                formData.append('x', Math.round(x));
+                formData.append('y', Math.round(y));
+                formData.append('w', Math.round(w));
+                formData.append('h', Math.round(h));
                 const algorithm = window.currentAlgorithm || 'patch_match';
                 formData.append('algorithm', algorithm);
 
@@ -535,6 +570,18 @@ function onCanvasMouseUp(opt) {
         isDragging = false;
         canvas.selection = false;
     }
+}
+
+function isMaskBlank(canvas) {
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        if (data[i] > 0 || data[i+1] > 0 || data[i+2] > 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function loadLayers(originalUrl, inpaintedUrl, textBlocks) {
@@ -823,6 +870,12 @@ async function onPathCreated(e) {
 
     try {
         const maskCanvas = await generateMaskFromPath(path);
+
+        // 检查生成的蒙版是否全黑（即路径完全在图片外部）
+        if (isMaskBlank(maskCanvas)) {
+            console.log('绘制区域完全在图片外部，跳过修复');
+            return;
+        }
 
         if (currentTool === 'brush') {
             const bbox = path.getBoundingRect();

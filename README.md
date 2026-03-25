@@ -1,9 +1,9 @@
-# Sharingan
+# MangaTransFer
 
-深度学习驱动的漫画自动重嵌工具
+漫画自动重嵌工具，愿天下不再有黑乎乎的漫画。
 
 ![screenshot](assets/screenshot.png)
-<center>界面预览</center>
+<p align="center">界面预览</p>
 
 ## 快速开始
 
@@ -11,11 +11,11 @@
 - Python 3.10.6
 
 ### 下载
-1. 克隆仓库  
+1. 克隆仓库
   ```bash
-git clone https://github.com/30A430AB/sharingan.git&&cd sharingan
+git clone https://github.com/30A430AB/MangaTransFer.git&&cd MangaTransFer
 ```
-2. 手动下载 [data](https://github.com/30A430AB/sharingan/releases/download/sankougyoku/data.zip) 文件夹，解压后放于源码目录下的对应位置
+2. 手动下载 [data](https://github.com/30A430AB/MangaTransFer/releases/download/v0.1.0/data.zip) 文件夹，解压后放于源码目录下的对应位置
 
 3. 安装依赖
 ```bash
@@ -30,7 +30,7 @@ python cli.py <原始图片文件夹路径> <文本图片文件夹路径>
 
 >[!NOTE]
 >原始图片与文本图片文件名必须一致
->文本图片分辨率可能被改变，请提前做好备份
+>
 
 ### GUI 模式
 ```bash

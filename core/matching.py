@@ -7,8 +7,126 @@ import os
 from pathlib import Path
 from natsort import natsorted
 from loguru import logger
+import cv2
+
+# ==================== 掩膜处理相关函数 ====================
+def detect_text_orientation(mask):
+    """
+    判断文本方向
+    输入：二值图（文字白色）
+    返回：'horizontal' 或 'vertical'
+    """
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return 'horizontal'
+    
+    all_points = np.vstack([cnt for cnt in contours])
+    x, y, w, h = cv2.boundingRect(all_points)
+    
+    if w > h * 1.2:
+        return 'horizontal'
+    elif h > w * 1.2:
+        return 'vertical'
+    else:
+        return 'horizontal'
+
+def get_median_line_size(mask, orientation):
+    """
+    获取横排时的文字行高中位数，或竖排时的文字列宽中位数
+    """
+    if orientation == 'horizontal':
+        row_sums = np.sum(mask // 255, axis=1)
+        thresh = 0.01 * mask.shape[1]
+        text_rows = np.where(row_sums > thresh)[0]
+        if len(text_rows) == 0:
+            return max(1, mask.shape[0] // 10)
+        
+        heights = []
+        start = text_rows[0]
+        for i in range(1, len(text_rows)):
+            if text_rows[i] != text_rows[i-1] + 1:
+                heights.append(text_rows[i-1] - start + 1)
+                start = text_rows[i]
+        heights.append(text_rows[-1] - start + 1)
+        
+        if not heights:
+            return max(1, mask.shape[0] // 10)
+        return int(np.median(heights))
+    
+    else:  # vertical
+        col_sums = np.sum(mask // 255, axis=0)
+        thresh = 0.01 * mask.shape[0]
+        text_cols = np.where(col_sums > thresh)[0]
+        if len(text_cols) == 0:
+            return max(1, mask.shape[1] // 10)
+        
+        widths = []
+        start = text_cols[0]
+        for i in range(1, len(text_cols)):
+            if text_cols[i] != text_cols[i-1] + 1:
+                widths.append(text_cols[i-1] - start + 1)
+                start = text_cols[i]
+        widths.append(text_cols[-1] - start + 1)
+        
+        if not widths:
+            return max(1, mask.shape[1] // 10)
+        return int(np.median(widths))
+
+def adaptive_expand_mask(mask, expand_ratio, close_kernel_size=None):
+    """
+    沿着文字最外围边缘扩展掩膜，保留原始形状的凹凸特征
+    
+    输入：
+        mask: 二值图，文字白色（255），背景黑色（0）
+        expand_ratio: 膨胀距离相对于文字典型尺寸的比例（例如0.5表示半个字）
+        close_kernel_size: 闭运算核大小，若为None则自动设为 expand_distance 的一半（至少1）
+    输出：
+        fill_mask: 白色填充的膨胀区域掩膜（二值图，背景黑，待修复区域白）
+        result: 绘制了红色轮廓的彩色图（用于可视化）
+        expanded_contour: 膨胀后区域的外轮廓点集
+    """
+    if len(mask.shape) == 3:
+        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+
+    # 1. 方向检测与尺寸计算
+    orientation = detect_text_orientation(mask)
+    median_size = get_median_line_size(mask, orientation)
+    expand_distance = max(1, int(median_size * expand_ratio))
+    
+    # 2. 闭运算：填补文字间的缝隙和断裂，使整个文字区域连通
+    if close_kernel_size is None:
+        close_kernel_size = max(1, expand_distance // 2)
+    close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_kernel_size, close_kernel_size))
+    closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
+
+    # 3. 膨胀：向外扩展指定距离（保持原始形状的凹凸性）
+    kernel_size = 2 * expand_distance + 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+    dilated = cv2.dilate(closed, kernel, iterations=1)
+
+    # 4. 提取膨胀后区域的外轮廓（只取最外层）
+    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        fill_mask = np.zeros_like(mask)
+        result = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        return fill_mask, result, None
+
+    # 取面积最大的轮廓（整个文字区域）
+    largest_contour = max(contours, key=cv2.contourArea)
+    expanded_contour = largest_contour
+
+    # 5. 生成白色填充掩膜
+    fill_mask = np.zeros_like(mask)
+    cv2.drawContours(fill_mask, [expanded_contour], -1, 255, thickness=cv2.FILLED)
+
+    # 6. 可视化：在原图上绘制红色轮廓
+    result = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+    cv2.drawContours(result, [expanded_contour], -1, (0, 0, 255), 2)
+
+    return fill_mask, result, expanded_contour
 
 
+# ==================== 原有匹配相关类与函数 ====================
 class TextBoxMatcher:
     def __init__(self, jp_json: str, cn_json: str):
         self.jp_json = jp_json
@@ -137,44 +255,25 @@ class TextBoxMatcher:
 def match_text_box(raw_boxes, text_box, iou_threshold=0.1):
     """
     匹配单个文本文本框到原始文本框，使用位置匹配 + IOU 验证
-
-    参数:
-        raw_boxes: 原始文本框列表，格式 [[x1, y1, x2, y2], ...]
-        text_box: 待匹配的文本文本框，格式 [x1, y1, x2, y2]
-        iou_threshold: IOU 验证阈值，默认0.1
-
-    返回:
-        list: 匹配到的原始框坐标 [x1, y1, x2, y2]，如果没有匹配则返回 None
     """
     if not raw_boxes:
         return None
 
-    # 计算原始文本框的平均高度作为Y轴阈值基准
     heights = [box[3] - box[1] for box in raw_boxes]
     avg_height = np.mean(heights) if heights else 0
     y_threshold = avg_height * 0.5
 
-    # 计算所有原始文本框的中心点Y坐标
     raw_centers_y = np.array([(box[1] + box[3]) / 2 for box in raw_boxes]).reshape(-1, 1)
-
-    # 构建KD树（仅Y轴坐标）
     tree = cKDTree(raw_centers_y)
 
-    # 计算待匹配文本框的中心点
     text_center_y = (text_box[1] + text_box[3]) / 2
     text_center_x = (text_box[0] + text_box[2]) / 2
 
-    # 在Y轴阈值范围内查找候选原始框
     candidate_indices = tree.query_ball_point(np.array([[text_center_y]]), y_threshold)
-
-    # 如果没有候选框，返回None
     if not candidate_indices or not candidate_indices[0]:
         return None
 
-    # 获取第一个查询点的候选索引
     candidate_indices = candidate_indices[0]
-
-    # 在候选框中查找X轴最接近且IOU满足阈值的原始框
     min_x_diff = float('inf')
     matched_box = None
 
@@ -182,30 +281,17 @@ def match_text_box(raw_boxes, text_box, iou_threshold=0.1):
         raw_box = raw_boxes[idx]
         raw_center_x = (raw_box[0] + raw_box[2]) / 2
         x_diff = abs(raw_center_x - text_center_x)
-
-        # 计算 IOU
         iou = calculate_iou(raw_box, text_box)
-
-        # 如果找到更接近的X轴匹配且IOU满足阈值则更新结果
         if x_diff < min_x_diff and iou >= iou_threshold:
             min_x_diff = x_diff
             matched_box = raw_box
 
     return matched_box
 
-
 def calculate_iou(box1, box2):
     """
     计算两个框的交并比(IOU)
-
-    参数:
-        box1: (x1, y1, x2, y2)
-        box2: (x1, y1, x2, y2)
-
-    返回:
-        float: 交并比 (0.0 - 1.0)
     """
-    # 计算交集区域
     x_left = max(box1[0], box2[0])
     y_top = max(box1[1], box2[1])
     x_right = min(box1[2], box2[2])
@@ -214,108 +300,93 @@ def calculate_iou(box1, box2):
     if x_right < x_left or y_bottom < y_top:
         return 0.0
 
-    # 计算交集面积
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
-
-    # 计算各自面积
     box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
     box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
-
-    # 计算并集面积
     union_area = box1_area + box2_area - intersection_area
 
-    # 避免除以零
     if union_area == 0:
         return 0.0
-
     return intersection_area / union_area
 
-
-def create_new_masks(match_result, raw_mask_dir, output_dir):
+def create_new_masks(match_result, raw_mask_dir, output_dir, expand_ratio=0.5):
     """
-    根据匹配结果创建新的日漫mask
+    根据匹配结果创建新的日漫mask，并对每个匹配的文本块进行自适应膨胀处理
 
     参数:
         match_result: 匹配结果字典，包含pages信息
         raw_mask_dir: 原始mask目录路径
         output_dir: 新mask输出目录路径
+        expand_ratio: 外扩距离相对于文字典型尺寸的比例，默认0.5（半个字高/宽）
     """
     logger.info("开始创建新的日漫mask...")
-
-    # 确保输出目录存在
     os.makedirs(output_dir, exist_ok=True)
 
-    # 获取生肉图片目录
     raw_dir = Path(match_result["directory"])
 
-    # 遍历所有页面
     for page_name, page_entries in match_result["pages"].items():
-        # 查找对应的生肉图片文件
-        image_extensions = {'.jpg', '.jpeg', '.png'}
-        raw_image_path = None
-        for ext in image_extensions:
-            potential_path = raw_dir / f"{page_name}{ext}"
-            if potential_path.exists():
-                raw_image_path = potential_path
-                break
-
-        if not raw_image_path:
-            logger.warning(f"警告: 未找到生肉图片: {page_name}")
-            continue
-
-        # 查找对应的mask文件
         mask_path = Path(raw_mask_dir) / f"mask-{page_name}.png"
         if not mask_path.exists():
             logger.warning(f"警告: 未找到mask文件: {mask_path}")
             continue
 
         try:
-            # 打开生肉图片获取尺寸
-            with Image.open(raw_image_path) as raw_img:
-                raw_width, raw_height = raw_img.size
+            # 打开原始mask获取尺寸
+            with Image.open(mask_path) as orig_mask_img:
+                orig_width, orig_height = orig_mask_img.size
 
-            # 创建全黑图像（与生肉图片同样大小）
-            new_mask = Image.new('L', (raw_width, raw_height), 0)  # 'L' 模式，0表示黑色
+            # 创建全黑图像（与原始mask同样大小）
+            new_mask = Image.new('L', (orig_width, orig_height), 0)
 
-            # 打开原始mask
+            # 打开原始mask（用于截取区域）
             original_mask = Image.open(mask_path).convert('L')
 
             # 处理每个匹配的文本框
             for entry in page_entries:
                 if entry["matched"]:
-                    # 获取生肉文本框坐标
-                    raw_box = entry["raw_xyxy"]
-
-                    # 从原始mask中截取对应区域
+                    raw_box = entry["raw_xyxy"]   # 生肉文本框坐标（在生肉图片上的位置）
                     x1, y1, x2, y2 = raw_box
                     # 确保坐标在图片范围内
                     x1 = max(0, x1)
                     y1 = max(0, y1)
-                    x2 = min(raw_width, x2)
-                    y2 = min(raw_height, y2)
+                    x2 = min(orig_width, x2)
+                    y2 = min(orig_height, y2)
 
                     if x1 >= x2 or y1 >= y2:
                         continue
 
-                    # 从原始mask中截取区域
+                    # 从原始mask中截取对应区域（PIL图像）
                     mask_region = original_mask.crop((x1, y1, x2, y2))
 
-                    # 将截取的区域粘贴到新mask的同样位置
-                    new_mask.paste(mask_region, (x1, y1))
+                    # 将截取区域转换为numpy数组（灰度），进行自适应膨胀处理
+                    region_np = np.array(mask_region, dtype=np.uint8)
+
+                    # 调用自适应膨胀函数，保留原始形状的凹凸性
+                    try:
+                        fill_mask_np, _, _ = adaptive_expand_mask(region_np, expand_ratio)
+                    except Exception as e:
+                        logger.error(f"处理文本块时出错: {e}, 使用原始区域")
+                        fill_mask_np = region_np
+
+                    # 将处理后的numpy数组转回PIL图像
+                    processed_region = Image.fromarray(fill_mask_np, mode='L')
+
+                    # 将处理后的区域粘贴到新mask的相同位置
+                    new_mask.paste(processed_region, (x1, y1))
 
             # 保存新mask
             output_path = Path(output_dir) / f"mask-{page_name}.png"
             new_mask.save(output_path)
-            logger.info(f"✓ 已创建新mask: {output_path.name}")
+            logger.info(f"已创建新mask: {output_path.name}")
 
         except Exception as e:
-            logger.error(f"✗ 创建页面 {page_name} 的新mask时出错: {str(e)}")
+            logger.error(f"创建页面 {page_name} 的新mask时出错: {str(e)}")
 
     logger.info("新mask创建完成！")
 
 
 def match_and_create_masks(raw_annotations_path, text_annotations_path, output_path,
-                          raw_mask_dir, new_mask_dir, status_callback=None):
+                          raw_mask_dir, new_mask_dir, status_callback=None, expand_ratio=0.5):
     """
     匹配文本框并创建新mask的完整流程
 
@@ -326,10 +397,10 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
         raw_mask_dir: 原始mask目录
         new_mask_dir: 新mask输出目录
         status_callback: 进度回调函数
+        expand_ratio: 外扩距离相对于文字典型尺寸的比例，默认0.5
     """
     logger.info("开始文本框匹配并创建新mask...")
 
-    # 读取生肉和熟肉的标注文件
     try:
         with open(raw_annotations_path, 'r', encoding='utf-8') as f:
             raw_json = json.load(f)
@@ -339,22 +410,19 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
     except Exception as e:
         logger.error(f"读取标注文件失败: {e}")
         return False
-
-    # 获取生肉图片目录
-    raw_dir = Path(raw_annotations_path).parent.parent
+    
+    output_root = Path(raw_annotations_path).parent.parent.parent
+    raw_dir = output_root
     text_dir = Path(text_annotations_path).parent.parent
 
-    # 创建TextBoxMatcher实例
     matcher = TextBoxMatcher(raw_annotations_path, text_annotations_path)
 
-    # 创建结果字典
     result = {
-        "directory": str(raw_dir.resolve()),
+        "directory": str(output_root.resolve()),
         "pages": {},
         "current_img": None
     }
 
-    # 获取所有页面名称
     raw_pages = list(raw_json.keys())
     text_pages = list(text_json.keys())
 
@@ -363,26 +431,20 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
         return False
 
     raw_pages = natsorted(raw_pages)
-
-    # 设置当前图片为第一页
     result["current_img"] = raw_pages[0]
 
     total_pages = len(raw_pages)
 
-    # 遍历所有页面进行匹配
     for page_idx, page_name in enumerate(raw_pages):
         if status_callback:
             status_callback(page_idx + 1, total_pages)
 
-        # 检查熟肉中是否有对应的页面
         if page_name not in text_json:
             logger.warning(f"警告: 熟肉中未找到页面 {page_name}，跳过")
             result["pages"][page_name] = []
             continue
 
-        # 获取图片尺寸
         try:
-            # 获取生肉图片尺寸
             raw_image_path = None
             for ext in ['.jpg', '.jpeg', '.png']:
                 potential_path = raw_dir / f"{page_name}{ext}"
@@ -390,7 +452,6 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
                     raw_image_path = potential_path
                     break
 
-            # 获取熟肉图片尺寸
             text_image_path = None
             for ext in ['.jpg', '.jpeg', '.png']:
                 potential_path = text_dir / f"{page_name}{ext}"
@@ -404,10 +465,9 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
                 continue
 
             with Image.open(raw_image_path) as raw_img:
-                raw_size = raw_img.size  # (width, height)
-
+                raw_size = raw_img.size
             with Image.open(text_image_path) as text_img:
-                text_size = text_img.size  # (width, height)
+                text_size = text_img.size
 
         except Exception as e:
             logger.error(f"获取图片尺寸失败 {page_name}: {e}")
@@ -416,10 +476,8 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
 
         logger.info(f"页面 {page_name}: 生肉尺寸 {raw_size}, 熟肉尺寸 {text_size}")
 
-        # 使用TextBoxMatcher进行匹配
         match_result = matcher.match_boxes(page_name, page_name, raw_size, text_size)
 
-        # 获取原始文本框和熟肉文本框
         raw_boxes = []
         if "annotations" in raw_json[page_name]:
             for annotation in raw_json[page_name]["annotations"]:
@@ -432,12 +490,7 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
                 if "xyxy" in annotation:
                     text_boxes.append(annotation["xyxy"])
 
-        # logger.info(f"页面 {page_name}: 生肉 {len(raw_boxes)} 个框, 熟肉 {len(text_boxes)} 个框")
-
-        # 创建当前页的结果列表
         page_results = []
-
-        # 初始化所有文本框为未匹配
         for i in range(len(text_boxes)):
             page_results.append({
                 "xyxy": [],
@@ -445,11 +498,9 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
                 "matched": 0
             })
 
-        # 处理匹配结果
         matches = match_result.get('matches', [])
         adjusted_positions = match_result.get('adjusted_positions', [])
 
-        # 更新匹配成功的文本框
         for match_idx, (jp_idx, cn_idx) in enumerate(matches):
             if cn_idx < len(page_results):
                 page_results[cn_idx] = {
@@ -459,22 +510,19 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
                     "matched": 1
                 }
 
-        # 将当前页结果添加到总结果
         result["pages"][page_name] = page_results
         matched_count = len([r for r in page_results if r['matched']])
         logger.info(f"页面 {page_name}: 匹配 {matched_count}/{len(page_results)} 个文本框")
 
-    # 保存匹配结果到文件
     try:
         with open(output_path, 'w', encoding='utf-8') as f:
-            # json.dump(result, f, indent=2, ensure_ascii=False)
             json.dump(result, f, ensure_ascii=False, separators=(',', ':'))
         logger.info(f"匹配结果已保存到: {output_path}")
     except Exception as e:
         logger.error(f"保存匹配结果失败: {e}")
         return False
 
-    # 创建新mask
-    create_new_masks(result, raw_mask_dir, new_mask_dir)
+    # 创建新mask，并传入expand_ratio参数
+    create_new_masks(result, raw_mask_dir, new_mask_dir, expand_ratio=expand_ratio)
 
     return True

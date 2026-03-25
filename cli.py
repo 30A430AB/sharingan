@@ -116,10 +116,10 @@ class MangaTranslationPipeline:
     def prepare_directories(self):
         """准备输出目录结构"""
         dirs = {
-            'text': self.output_dir / "text",           # 文字提取输出
-            'text_working': self.output_dir / "text_working", # 调整后的熟肉图片
-            'raw_mask': self.output_dir / "raw_mask",   # 生肉检测输出
-            'text_mask': self.output_dir / "text_mask", # 熟肉检测输出
+			'temp': self.output_dir / "temp", # 调整后的熟肉图片
+            'text': self.output_dir / "temp" / "text",           # 文字提取输出
+            'raw_mask': self.output_dir  / "temp" / "raw_mask",   # 生肉检测输出
+            'text_mask': self.output_dir  / "temp" / "text_mask", # 熟肉检测输出
             'new_mask': self.output_dir / "mask",       # 匹配后mask
             'inpainted': self.output_dir / "inpainted", # 修复结果
             'result': self.output_dir / "result",        # 最终结果
@@ -136,7 +136,7 @@ class MangaTranslationPipeline:
         
         # 1. 复制原始熟肉图片到工作目录
         src_dir = self.text_dir
-        dst_dir = directories['text_working']
+        dst_dir = directories['temp']
         dst_dir.mkdir(parents=True, exist_ok=True)
         
         # 获取原始熟肉图片列表

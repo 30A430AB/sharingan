@@ -9,13 +9,14 @@ from .patch_match import inpaint as patch_match_inpaint
 
 class Inpainter:
     def __init__(self, 
-                 img_path: str,
-                 mask_path: str,
-                 output_path: str = "result.png",
-                 dilate_iterations: int = 3,
-                 kernel_size: int = 3,
-                 algorithm: str = "patchmatch",
-                 debug: bool = False):
+                img_path: str,
+                mask_path: str,
+                output_path: str = "result.png",
+                dilate_iterations: int = 3,
+                kernel_size: int = 3,
+                algorithm: str = "patchmatch",
+                debug: bool = False,
+                do_dilate: bool = False):
         
         self.img_path = img_path
         self.mask_path = mask_path
@@ -25,6 +26,7 @@ class Inpainter:
         self.original_size = None
         self.debug = debug
         self.algorithm = algorithm
+        self.do_dilate = do_dilate
         
         # 初始化算法组件
         if self.algorithm == "lama_large_512px":
@@ -42,7 +44,6 @@ class Inpainter:
 
     def _load_images(self):
         """加载并处理图像和掩膜"""
-        # 加载原图
         self.img_pil = Image.open(self.img_path).convert("RGB")
         self.original_size = self.img_pil.size
 
@@ -50,12 +51,19 @@ class Inpainter:
         mask_pil = Image.open(self.mask_path).convert("L")
         mask_np = np.array(mask_pil)
         _, binary_mask = cv2.threshold(mask_np, 127, 255, cv2.THRESH_BINARY)
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size))
-        dilated_mask = cv2.dilate(binary_mask, kernel, iterations=self.dilate_iterations)
-        self.mask_pil = Image.fromarray(dilated_mask).convert("L")
+
+        if self.do_dilate:
+            # 如果需要膨胀，则执行
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size))
+            dilated_mask = cv2.dilate(binary_mask, kernel, iterations=self.dilate_iterations)
+            self.mask_pil = Image.fromarray(dilated_mask).convert("L")
+        else:
+            # 否则直接使用二值化掩膜
+            self.mask_pil = Image.fromarray(binary_mask).convert("L")
 
         if self.debug:
-            self.mask_pil.save("debug_dilated_mask.png")
+            debug_name = "debug_dilated_mask.png" if self.do_dilate else "debug_mask.png"
+            self.mask_pil.save(debug_name)
 
     def _validate_images(self):
         if self.img_pil is None:

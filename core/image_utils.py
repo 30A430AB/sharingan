@@ -27,7 +27,7 @@ def apply_text_to_inpainted(json_data: dict):
     # 设置目录路径
     base_dir = Path(json_data["directory"])
     inpainted_dir = base_dir / "inpainted"
-    text_dir = base_dir / "text"
+    text_dir = base_dir / "temp" / "text"
     result_dir = base_dir / "result"
 
     # 创建结果目录

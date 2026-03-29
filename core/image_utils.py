@@ -4,13 +4,14 @@ import shutil
 from PIL import Image
 import os
 from loguru import logger
+from natsort import natsorted
 
 from core.extraction import MaskProcessor
 from core.inpainting import Inpainter
 
 
 def get_image_files(directory: Path) -> list:
-    """获取目录下所有图片文件"""
+    """获取目录下所有图片文件（自然排序）"""
     image_extensions = {'.jpg', '.jpeg', '.png'}
     files = []
     try:
@@ -18,8 +19,8 @@ def get_image_files(directory: Path) -> list:
             if entry.is_file() and entry.suffix.lower() in image_extensions:
                 files.append(entry)
     except FileNotFoundError:
-        pass  # 目录不存在时返回空列表
-    return files
+        pass
+    return natsorted(files, key=lambda x: x.name)
 
 
 def apply_text_to_inpainted(json_data: dict):
@@ -44,8 +45,20 @@ def apply_text_to_inpainted(json_data: dict):
         # 查找文本图片文件
         text_path = find_image_file(text_dir, page_name)
         if not text_path.exists():
-            logger.warning(f"警告: 未找到文本图片: {text_path}")
-            continue
+            # 没有文本图片时，复制原始图片到结果目录
+            logger.warning(f"警告: 未找到文本图片: {text_path}，将复制原始图片")
+            raw_path = find_image_file(base_dir, page_name)  # 原图路径
+            if not raw_path.exists():
+                logger.error(f"错误: 未找到原始图片: {raw_path}，跳过")
+                continue
+            try:
+                # 保持原始扩展名复制
+                result_path = result_dir / raw_path.name
+                shutil.copy2(raw_path, result_path)
+                logger.info(f"已复制原始图片: {raw_path.name} -> {result_path.name}")
+            except Exception as e:
+                logger.error(f"复制原始图片 {page_name} 时出错: {str(e)}")
+            continue  # 跳过后续贴图逻辑
 
         try:
             # 加载inpainted图片
@@ -296,6 +309,7 @@ def apply_text_to_inpainted_step(json_path, status_callback=None):
         json_path: 匹配结果JSON文件路径
         status_callback: 进度回调函数
     """
+
     logger.info("开始将文字贴到修复后的图片上...")
 
     if not os.path.exists(json_path):
@@ -308,7 +322,6 @@ def apply_text_to_inpainted_step(json_path, status_callback=None):
             json_data = json.load(f)
 
         # 调用贴图函数
-        from core.image_utils import apply_text_to_inpainted
         apply_text_to_inpainted(json_data)
 
         return True

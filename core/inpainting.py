@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import cv2
+import torch
 from pathlib import Path
 from PIL import Image
 from simple_lama_inpainting import SimpleLama
@@ -32,7 +33,8 @@ class Inpainter:
         if self.algorithm == "lama_large_512px":
             self.model_path = Path("data/models/anime-manga-big-lama.pt")
             os.environ["LAMA_MODEL"] = str(self.model_path)
-            self.simple_lama = SimpleLama()
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.simple_lama = SimpleLama(device=device)
         elif self.algorithm == "patchmatch":
             self._init_patchmatch()
         

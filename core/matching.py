@@ -8,9 +8,14 @@ from pathlib import Path
 from natsort import natsorted
 from loguru import logger
 import cv2
+import torch
+import torch.nn as nn
+import torchvision.models as models
+import torchvision.transforms as transforms
+from sklearn.metrics.pairwise import cosine_similarity
 
 
-# ==================== 匹配相关类与函数 ====================
+# ==================== 文本框匹配模块 ====================
 class TextBoxMatcher:
     def __init__(self, jp_json: str, cn_json: str):
         self.jp_json = jp_json
@@ -335,3 +340,108 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
     create_new_masks(result, raw_mask_dir, new_mask_dir)
 
     return True
+
+# ==================== 图片匹配模块 ====================
+def load_model(weights_path, device):
+    """
+    加载预训练的 ResNet18 模型，并移除最后的全连接层以得到特征向量。
+    """
+    model = models.resnet18(weights=None)
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Identity()
+    model.load_state_dict(torch.load(weights_path, map_location=device), strict=False)
+    model = model.to(device)
+    model.eval()
+    return model
+
+def get_transform():
+    """
+    定义图像预处理流程：调整大小、转换为张量、归一化（使用 ImageNet 统计值）
+    """
+    return transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
+def extract_features(image_paths, model, transform, device, batch_size=32):
+    """
+    从一组图像路径中提取特征向量。
+    返回：特征矩阵 (n_samples, feature_dim) 和对应的文件路径列表。
+    """
+    features = []
+    valid_paths = []
+    model.eval()
+    with torch.no_grad():
+        for i in range(0, len(image_paths), batch_size):
+            batch_paths = image_paths[i:i+batch_size]
+            batch_tensors = []
+            for path in batch_paths:
+                try:
+                    img = Image.open(path).convert('RGB')
+                    img_tensor = transform(img).unsqueeze(0)
+                    batch_tensors.append(img_tensor)
+                    valid_paths.append(path)
+                except Exception as e:
+                    continue
+            if not batch_tensors:
+                continue
+            batch_input = torch.cat(batch_tensors, dim=0).to(device)
+            batch_features = model(batch_input).cpu().numpy()
+            features.append(batch_features)
+    if not features:
+        return np.array([]), []
+    features = np.vstack(features)
+    return features, valid_paths
+
+def match_images(raw_dir, text_dir, model_weights_path, batch_size=32, device=None):
+    """
+    匹配 raw 图片和 text 图片，返回匹配结果列表。
+
+    参数：
+        raw_dir (str): 原始图片（生肉）文件夹路径
+        text_dir (str): 翻译后图片（熟肉）文件夹路径
+        model_weights_path (str): ResNet18 预训练权重文件路径
+        batch_size (int): 特征提取时的批大小，默认为 32
+        device (str, optional): 计算设备 ('cuda' 或 'cpu')，默认自动选择
+
+    返回：
+        list: 匹配结果列表，每个元素为字典，包含以下字段：
+            - 'raw_path': raw 图片的原始路径
+            - 'text_path': 匹配到的 text 图片的路径
+            - 'similarity': 余弦相似度
+    """
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    raw_images = [os.path.join(raw_dir, f) for f in os.listdir(raw_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
+    text_images = [os.path.join(text_dir, f) for f in os.listdir(text_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
+
+    if not raw_images or not text_images:
+        raise ValueError("No images found in one of the directories.")
+
+    model = load_model(model_weights_path, device)
+    transform = get_transform()
+
+    raw_features, raw_valid = extract_features(raw_images, model, transform, device, batch_size)
+    if raw_features.size == 0:
+        raise RuntimeError("No valid raw images after loading.")
+
+    text_features, text_valid = extract_features(text_images, model, transform, device, batch_size)
+    if text_features.size == 0:
+        raise RuntimeError("No valid text images after loading.")
+
+    sim_matrix = cosine_similarity(raw_features, text_features)
+
+    matches = []
+    for i, raw_path in enumerate(raw_valid):
+        best_idx = np.argmax(sim_matrix[i])
+        best_sim = sim_matrix[i, best_idx]
+        text_path = text_valid[best_idx]
+        matches.append({
+            'raw_path': raw_path,
+            'text_path': text_path,
+            'similarity': best_sim
+        })
+
+    return matches

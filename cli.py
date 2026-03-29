@@ -7,7 +7,7 @@ from loguru import logger
 
 from core.detection import ComicTextDetector
 from core.adjustment import CoordinateAdjuster
-from core.matching import match_and_create_masks
+from core.matching import match_and_create_masks, match_images
 from core.image_utils import (
     resize_text_images_to_match_raw,
     extract_text_from_masks,
@@ -70,7 +70,7 @@ def configure_logging():
 class MangaTranslationPipeline:
     """漫画重嵌处理流水线"""
     
-    def __init__(self, raw_dir, text_dir, model_path, inpaint_algorithm='patchmatch', output_dir=None):
+    def __init__(self, raw_dir, text_dir, model_path, inpaint_algorithm='patchmatch', output_dir=None, automatch=True):
         """
         初始化流水线
         
@@ -85,6 +85,7 @@ class MangaTranslationPipeline:
         self.model_path = Path(model_path)
         self.inpaint_algorithm = inpaint_algorithm
         self.output_dir = Path(output_dir) if output_dir else self.raw_dir
+        self.automatch = automatch
         
         # 设置日志
         self.logger = logger.bind(name='MangaPipeline')
@@ -102,8 +103,7 @@ class MangaTranslationPipeline:
     #     return logging.getLogger('MangaPipeline')
     
     def _get_sorted_images(self, directory):
-        """获取自然排序的图片文件列表（安全遍历）"""
-        from natsort import natsorted
+        """获取自然排序的图片文件列表"""
         image_extensions = {'.jpg', '.jpeg', '.png'}
         image_files = []
         try:
@@ -132,40 +132,71 @@ class MangaTranslationPipeline:
         return dirs
     
     def step1_resize_images(self, directories):
-        """步骤1: 复制熟肉图片到工作目录，然后调整尺寸匹配生肉"""
-        self.logger.info("步骤1:  复制熟肉图片并调整尺寸")
+        """步骤1: 复制熟肉图片到工作目录，并根据 automatch 标志决定是否重命名匹配"""
+        self.logger.info("步骤1: 复制熟肉图片并调整尺寸")
         
-        # 1. 复制原始熟肉图片到工作目录
         src_dir = self.text_dir
         dst_dir = directories['temp']
         dst_dir.mkdir(parents=True, exist_ok=True)
         
-        # 获取原始熟肉图片列表
-        text_images = self._get_sorted_images(src_dir)
-        if not text_images:
-            raise Exception(f"熟肉目录中没有图片文件: {src_dir}")
-        
-        # 复制所有熟肉图片到工作目录
-        copied = 0
-        for img_path in text_images:
-            dst_path = dst_dir / img_path.name
-            try:
-                # 使用 shutil.copy2 保留元数据
+        if not self.automatch:
+            # 直接复制所有熟肉图片
+            text_images = self._get_sorted_images(src_dir)
+            if not text_images:
+                raise Exception(f"熟肉目录中没有图片文件: {src_dir}")
+            
+            copied = 0
+            for img_path in text_images:
+                dst_path = dst_dir / img_path.name
                 import shutil
                 shutil.copy2(img_path, dst_path)
                 copied += 1
                 self.logger.info(f"已复制: {img_path.name}")
-            except Exception as e:
-                self.logger.error(f"复制失败 {img_path.name}: {e}")
+            
+            if copied == 0:
+                raise Exception("没有成功复制任何熟肉图片")
+            self.logger.info(f"已复制 {copied} 张熟肉图片到工作目录: {dst_dir}")
+        else:
+            # 自动匹配：根据图像相似度匹配并重命名复制
+            self.logger.info("启用自动匹配模式，正在计算图片相似度...")
+            
+            # 检查匹配模型是否存在
+            match_model_path = Path("data/models/resnet18-f37072fd.pth")
+            if not match_model_path.exists():
+                raise Exception(f"匹配模型不存在: {match_model_path}\n")
+            
+            # 调用匹配模块，获取生肉→熟肉的对应关系
+            matches = match_images(
+                raw_dir=str(self.raw_dir),
+                text_dir=str(src_dir),
+                model_weights_path=str(match_model_path)
+            )
+            
+            if not matches:
+                raise Exception("图片匹配失败，未获得任何匹配结果")
+            
+            copied = 0
+            for match in matches:
+                raw_path = Path(match['raw_path'])
+                text_path = Path(match['text_path'])
+                raw_stem = raw_path.stem          # 生肉文件名（不含扩展名）
+                text_suffix = text_path.suffix    # 熟肉扩展名（如 .png）
+                target_name = raw_stem + text_suffix
+                dst_path = dst_dir / target_name
+                
+                import shutil
+                shutil.copy2(text_path, dst_path)
+                copied += 1
+                self.logger.info(f"匹配: {text_path.name} -> {target_name}")
+            
+            if copied == 0:
+                raise Exception("没有成功复制任何匹配的熟肉图片")
+            self.logger.info(f"已复制 {copied} 张匹配后的熟肉图片到工作目录: {dst_dir}")
         
-        if copied == 0:
-            raise Exception("没有成功复制任何熟肉图片")
-        self.logger.info(f"已复制 {copied} 张熟肉图片到工作目录: {dst_dir}")
-        
-        # 2. 更新 self.text_dir 指向工作目录
+        # 更新 self.text_dir 指向工作目录
         self.text_dir = dst_dir
         
-        # 3. 调用原有调整尺寸函数
+        # 调整尺寸（与生肉图片分辨率对齐）
         resize_count = resize_text_images_to_match_raw(
             raw_dir=str(self.raw_dir),
             text_dir=str(self.text_dir),
@@ -338,10 +369,12 @@ class MangaTranslationPipeline:
 def main():
     """命令行主函数"""
     parser = argparse.ArgumentParser(description='漫画翻译自动嵌字工具')
-    parser.add_argument('raw_dir', help='生肉图片目录路径')
-    parser.add_argument('text_dir', help='熟肉图片目录路径')
+    parser.add_argument('raw_dir', help='原始图片目录路径')
+    parser.add_argument('text_dir', help='文本图片目录路径')
     parser.add_argument('--inpaint-algorithm', '-i', default='patchmatch', choices=['patchmatch', 'lama_large_512px'],
                         help='修复算法 (patchmatch 或 lama_large_512px)')
+    parser.add_argument('--automatch', default='true', choices=['true', 'false'],
+                    help='是否自动匹配原始图片与文本图片（基于图像相似度）')
     
     args = parser.parse_args()
     
@@ -368,10 +401,11 @@ def main():
             text_dir=args.text_dir,
             model_path=model_path,
             inpaint_algorithm=args.inpaint_algorithm,
-            output_dir=None  # 使用默认（生肉目录）
+            output_dir=None,  # 使用默认（生肉目录）
+            automatch=(args.automatch.lower() == 'true'),
         )
         pipeline.run()
-        
+      
     except Exception as e:
         print(f"处理过程中发生错误: {e}")
         return 1

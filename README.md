@@ -1,8 +1,8 @@
 # MangaTransFer
 
-带露折花，色香自然要好得多，昔时不能够，今以朝花夕拾，终可为之。
+带露折花，色香自然要好得多；昔时不能够，今以朝花夕拾，终可为之。
 
-![screenshot](assets/screenshot.png)
+![screenshot](screenshot.png)
 <p align="center">界面预览</p>
 
 ## 快速开始
@@ -25,12 +25,14 @@ pip install -r requirements.txt
 
 ### 命令行模式
 ```bash
-python cli.py <原始图片文件夹路径> <文本图片文件夹路径>
+python cli.py <原始图片文件夹路径> <文本图片文件夹路径> [--inpaint-algorithm {patchmatch,lama_large_512px}] [--automatch {true,false}]
 ```
 
->[!NOTE]
->原始图片与文本图片文件名必须一致
->
+|  参数   | 必填  |  默认   | 描述  |
+|  ----  | ----  |  ----  | ----  |
+| raw_dir  | 是 | 无  | 原始图片目录路径 |
+| text_dir  | 是 | 无  | 文本图片目录路径 |
+| --automatch  | 否 | true  | 是否自动匹配图片。若为 false，则要求两边图片文件名必须一致 |
 
 ### GUI 模式
 ```bash
@@ -48,4 +50,5 @@ python gui.py
 - [BallonsTranslator](https://github.com/dmMaze/BallonsTranslator)
 - [comic-text-detector](https://github.com/dmMaze/comic-text-detector)
 - [patchmatch](https://github.com/vacancy/PyPatchMatch) [修改版](https://github.com/dmMaze/PyPatchMatchInpaint)
-- [lama](https://github.com/advimman/lama)(本程序使用微调版) [simple-lama-inpainting](https://github.com/enesmsahin/simple-lama-inpainting)
+- [lama](https://github.com/advimman/lama) [微调版](https://huggingface.co/dreMaz/AnimeMangaInpainting) [simple-lama-inpainting](https://github.com/enesmsahin/simple-lama-inpainting)
+- [resnet18](https://github.com/pytorch/vision)

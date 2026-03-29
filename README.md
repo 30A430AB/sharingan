@@ -25,7 +25,7 @@ pip install -r requirements.txt
 
 ### 命令行模式
 ```bash
-python cli.py <原始图片文件夹路径> <文本图片文件夹路径> [--inpaint-algorithm {patchmatch,lama_large_512px}] [--automatch {true,false}]
+python cli.py <原始图片文件夹路径> <文本图片文件夹路径> [--automatch {true,false}]
 ```
 
 |  参数   | 必填  |  默认   | 描述  |

@@ -146,7 +146,7 @@ class CoordinateAdjuster:
                 if self.status_callback:
                     self.status_callback(processed, total)
 
-            # 安全写入（保持原有代码）
+            # 写入
             temp_path = self.annotations_path + '.tmp'
             with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)

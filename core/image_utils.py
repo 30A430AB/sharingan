@@ -23,7 +23,7 @@ def get_image_files(directory: Path) -> list:
     return natsorted(files, key=lambda x: x.name)
 
 
-def apply_text_to_inpainted(json_data: dict):
+def apply_text_to_inpainted(json_data: dict, status_callback=None):
     """将文本块贴到inpainted图片上"""
     # 设置目录路径
     base_dir = Path(json_data["directory"])
@@ -40,6 +40,8 @@ def apply_text_to_inpainted(json_data: dict):
         inpainted_path = find_image_file(inpainted_dir, page_name)
         if not inpainted_path.exists():
             logger.warning(f"警告: 未找到inpainted图片: {inpainted_path}")
+            if status_callback:
+                status_callback()
             continue
 
         # 查找文本图片文件
@@ -50,14 +52,18 @@ def apply_text_to_inpainted(json_data: dict):
             raw_path = find_image_file(base_dir, page_name)  # 原图路径
             if not raw_path.exists():
                 logger.error(f"错误: 未找到原始图片: {raw_path}，跳过")
+                if status_callback:
+                    status_callback()
                 continue
             try:
                 # 保持原始扩展名复制
                 result_path = result_dir / raw_path.name
                 shutil.copy2(raw_path, result_path)
-                logger.info(f"已复制原始图片: {raw_path.name} -> {result_path.name}")
+                # logger.info(f"已复制原始图片: {raw_path.name} -> {result_path.name}")
             except Exception as e:
                 logger.error(f"复制原始图片 {page_name} 时出错: {str(e)}")
+            if status_callback:
+                status_callback()
             continue  # 跳过后续贴图逻辑
 
         try:
@@ -86,10 +92,13 @@ def apply_text_to_inpainted(json_data: dict):
             # 保存结果图片为PNG格式
             result_path = result_dir / f"{page_name}.png"
             base_img.save(result_path, "PNG")
-            logger.info(f"已合成: {page_name}.png")
+            # logger.info(f"已合成: {page_name}.png")
 
         except Exception as e:
             logger.error(f"处理页面 {page_name} 时出错: {str(e)}")
+
+        if status_callback:
+            status_callback()
 
 
 def find_image_file(directory: Path, base_name: str) -> Path:
@@ -131,9 +140,9 @@ def copy_input_images_to_temp(original_input_dir, temp_input_dir):
         dest_path = Path(temp_input_dir) / img_path.name
         shutil.copy2(img_path, dest_path)
         copied_count += 1
-        logger.info(f"复制: {img_path.name}")
+        # logger.info(f"复制: {img_path.name}")
 
-    logger.info(f"已复制 {copied_count} 张图片到 {temp_input_dir}")
+    # logger.info(f"已复制 {copied_count} 张图片到 {temp_input_dir}")
     return copied_count
 
 
@@ -184,16 +193,16 @@ def resize_text_images_to_match_raw(raw_dir, text_dir, status_callback=None):
                 resized_img = text_img.resize((new_width, raw_height), resample=Image.LANCZOS)
                 resized_img.save(text_img_path)
                 processed_count += 1
-                logger.info(f"已调整: {text_img_path.name} -> {new_width}x{raw_height}")
+                # logger.info(f"已调整: {text_img_path.name} -> {new_width}x{raw_height}")
 
         except Exception as e:
             logger.error(f"调整失败 {text_img_path.name}: {e}")
 
-    logger.info(f"图片尺寸调整完成！共处理 {processed_count} 张图片")
+    # logger.info(f"图片尺寸调整完成！共处理 {processed_count} 张图片")
     return processed_count
 
 
-def extract_text_from_masks(input_dir, mask_dir, output_dir, dilation_iterations=2):
+def extract_text_from_masks(input_dir, mask_dir, output_dir, dilation_iterations=2, status_callback=None):
     """
     从掩码图像中提取文字
 
@@ -202,16 +211,20 @@ def extract_text_from_masks(input_dir, mask_dir, output_dir, dilation_iterations
         mask_dir: 掩码图片目录
         output_dir: 提取结果输出目录
         dilation_iterations: 膨胀迭代次数，用于扩大文字区域
+        status_callback: 进度回调函数，每处理一张图片调用一次，参数为(processed, total)
     """
-    logger.info("开始文字提取...")
+    # logger.info("开始文字提取...")
 
     os.makedirs(output_dir, exist_ok=True)
 
     input_images = get_image_files(Path(input_dir))
-
+    total = len(input_images)
     processed_count = 0
 
-    for input_img_path in input_images:
+    for idx, input_img_path in enumerate(input_images):
+        if status_callback:
+            status_callback(idx + 1, total)
+
         img_name = input_img_path.stem
         mask_filename = f"mask-{img_name}.png"
         mask_path = Path(mask_dir) / mask_filename
@@ -230,16 +243,13 @@ def extract_text_from_masks(input_dir, mask_dir, output_dir, dilation_iterations
                 output_path=str(output_path),
                 dilation_iterations=dilation_iterations
             )
-            # 注意：MaskProcessor 内部可能需要在初始化时执行提取逻辑，
-            # 如果它只是设置参数而没有实际执行，请在这里调用 processor.process() 或类似方法
-            # 根据原有代码，它可能直接在 __init__ 中执行了操作，所以此处保持不变
             processed_count += 1
-            logger.info(f"已提取: {input_img_path.name} -> {output_filename}")
+            # logger.info(f"已提取: {input_img_path.name} -> {output_filename}")
 
         except Exception as e:
             logger.error(f"提取失败 {input_img_path.name}: {e}")
 
-    logger.info(f"文字提取完成！共处理 {processed_count} 张图片")
+    # logger.info(f"文字提取完成！共处理 {processed_count} 张图片")
     return processed_count
 
 
@@ -254,7 +264,7 @@ def inpaint_raw_images(raw_img_dir, new_mask_dir, output_dir, algorithm="patchma
         algorithm: 修复算法，默认使用patchmatch
         status_callback: 进度回调函数
     """
-    logger.info("开始修复生肉图片...")
+    # logger.info("开始修复生肉图片...")
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -292,12 +302,12 @@ def inpaint_raw_images(raw_img_dir, new_mask_dir, output_dir, algorithm="patchma
             )
             # 假设 Inpainter 在初始化时执行修复并保存
             processed_count += 1
-            logger.info(f"已修复: {raw_img_path.name} -> {output_filename}")
+            # logger.info(f"已修复: {raw_img_path.name} -> {output_filename}")
 
         except Exception as e:
             logger.error(f"修复失败 {raw_img_path.name}: {e}")
 
-    logger.info(f"生肉图片修复完成！共处理 {processed_count} 张图片")
+    # logger.info(f"生肉图片修复完成！共处理 {processed_count} 张图片")
     return processed_count
 
 
@@ -307,10 +317,10 @@ def apply_text_to_inpainted_step(json_path, status_callback=None):
 
     Args:
         json_path: 匹配结果JSON文件路径
-        status_callback: 进度回调函数
+        status_callback: 进度回调函数，每处理一张图片调用一次，无参数
     """
 
-    logger.info("开始将文字贴到修复后的图片上...")
+    # logger.info("开始将文字贴到修复后的图片上...")
 
     if not os.path.exists(json_path):
         logger.error(f"错误: JSON文件不存在: {json_path}")
@@ -321,8 +331,8 @@ def apply_text_to_inpainted_step(json_path, status_callback=None):
         with open(json_path, 'r', encoding='utf-8') as f:
             json_data = json.load(f)
 
-        # 调用贴图函数
-        apply_text_to_inpainted(json_data)
+        # 调用贴图函数，传入回调
+        apply_text_to_inpainted(json_data, status_callback=status_callback)
 
         return True
 

@@ -146,7 +146,7 @@ def create_new_masks(match_result, raw_mask_dir, output_dir):
     """
     根据匹配结果创建新的日漫mask，并根据图片尺寸自适应膨胀
     """
-    logger.info("开始创建新的日漫mask...")
+    # logger.info("开始创建新的日漫mask...")
     os.makedirs(output_dir, exist_ok=True)
 
     for page_name, page_entries in match_result["pages"].items():
@@ -191,12 +191,12 @@ def create_new_masks(match_result, raw_mask_dir, output_dir):
             # 保存
             output_path = Path(output_dir) / f"mask-{page_name}.png"
             dilated_mask.save(output_path)
-            logger.info(f"已创建膨胀后的mask: {output_path.name} (膨胀核大小={kernel_size})")
+            # logger.info(f"已创建膨胀后的mask: {output_path.name} (膨胀核大小={kernel_size})")
 
         except Exception as e:
             logger.error(f"创建页面 {page_name} 的新mask时出错: {str(e)}")
 
-    logger.info("新mask创建完成！")
+    # logger.info("新mask创建完成！")
 
 
 
@@ -213,7 +213,7 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
         new_mask_dir: 新mask输出目录
         status_callback: 进度回调函数
     """
-    logger.info("开始文本框匹配并创建新mask...")
+    # logger.info("开始文本框匹配并创建新mask...")
 
     try:
         with open(raw_annotations_path, 'r', encoding='utf-8') as f:
@@ -288,7 +288,7 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
             result["pages"][page_name] = []
             continue
 
-        logger.info(f"页面 {page_name}: 生肉尺寸 {raw_size}, 熟肉尺寸 {text_size}")
+        # logger.info(f"页面 {page_name}: 生肉尺寸 {raw_size}, 熟肉尺寸 {text_size}")
 
         match_result = matcher.match_boxes(page_name, page_name, raw_size, text_size)
 
@@ -326,12 +326,12 @@ def match_and_create_masks(raw_annotations_path, text_annotations_path, output_p
 
         result["pages"][page_name] = page_results
         matched_count = len([r for r in page_results if r['matched']])
-        logger.info(f"页面 {page_name}: 匹配 {matched_count}/{len(page_results)} 个文本框")
+        # logger.info(f"页面 {page_name}: 匹配 {matched_count}/{len(page_results)} 个文本框")
 
     try:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(result, f, ensure_ascii=False, separators=(',', ':'))
-        logger.info(f"匹配结果已保存到: {output_path}")
+        # logger.info(f"匹配结果已保存到: {output_path}")
     except Exception as e:
         logger.error(f"保存匹配结果失败: {e}")
         return False

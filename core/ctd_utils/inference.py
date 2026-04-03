@@ -57,8 +57,8 @@ def model2annotations(model_path, img_dir_list, save_dir, save_json=False, progr
         maskname = 'mask-'+imname+'.png'
 
         if progress_callback:
-            # 传递当前序号（从0开始）
-            progress_callback(idx, None)
+            # 传递当前进度（从1开始）和总数
+            progress_callback(idx+1, total)
 
         _, mask_refined, blk_list = model(img, refine_mode=REFINEMASK_ANNOTATION, keep_undetected_mask=True)
         

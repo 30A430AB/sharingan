@@ -609,6 +609,17 @@ window.initMatchResultPanel = function(textDir, thumbDir) {
                     showImageSelector(row);
                 }
             };
+            var row = wrapper.closest('[data-raw-path]');
+            if (row) {
+                var rawPath = row.getAttribute('data-raw-path');
+                fetch('/update_match_text', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ raw_path: rawPath, new_text_path: '' })
+                }).then(function(res) { return res.json(); }).then(function(data) {
+                    if (!data.success) console.error('清空 text_path 失败', data);
+                }).catch(function(err) { console.error('清空 text_path 出错', err); });
+            }
         });
     });
 };

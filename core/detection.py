@@ -42,16 +42,11 @@ class ComicTextDetector:
         """执行检测"""
         from .ctd_utils.inference import model2annotations
         
-        def _simple_callback(current_idx, _):
-            # 仅传递当前序号，过滤文件名
-            if self.status_callback:
-                self.status_callback(current_idx+1, None)
-        
         model2annotations(
-            self.model_path,
-            self.img_dir,
-            self.save_dir,
-            save_json=self.save_json,
-            progress_callback=_simple_callback
-        )
+        self.model_path,
+        self.img_dir,
+        self.save_dir,
+        save_json=self.save_json,
+        progress_callback=self.status_callback
+    )
 

@@ -4,6 +4,7 @@ import sys
 import time
 from natsort import natsorted
 from loguru import logger
+import torch
 
 from core.detection import ComicTextDetector
 from core.adjustment import CoordinateAdjuster
@@ -130,13 +131,13 @@ class MangaTransFerPipeline:
     
     def step1_resize_images(self, directories):
         """步骤1: 复制熟肉图片到工作目录，并根据预计算匹配或 automatch 决定重命名"""
-        self.logger.info("步骤1: 复制熟肉图片并调整尺寸")
+        self.logger.info("[1/7] 预处理")
         
         src_dir = self.text_dir
         dst_dir = directories['temp']
         dst_dir.mkdir(parents=True, exist_ok=True)
         
-        # 优先使用 GUI 传入的预计算匹配结果
+        # 使用 GUI 传入的预计算匹配结果
         if self.precomputed_matches is not None:
             self.logger.info("使用 GUI 传入的预计算匹配结果...")
             matches = self.precomputed_matches
@@ -144,19 +145,22 @@ class MangaTransFerPipeline:
                 raise Exception("预计算的匹配结果为空")
             copied = 0
             for match in matches:
+                text_path_str = match.get('text_path', '')
+                if not text_path_str or not Path(text_path_str).exists():
+                    raw_path = Path(match['raw_path'])
+                    self.logger.warning(f"跳过匹配项 {raw_path.name}: 未选择文本图片")
+                    continue
                 raw_path = Path(match['raw_path'])
-                text_path = Path(match['text_path'])
-                raw_stem = raw_path.stem          # 生肉文件名（不含扩展名）
-                text_suffix = text_path.suffix    # 熟肉扩展名（如 .png）
+                text_path = Path(text_path_str)
+                raw_stem = raw_path.stem
+                text_suffix = text_path.suffix
                 target_name = raw_stem + text_suffix
                 dst_path = dst_dir / target_name
                 import shutil
                 shutil.copy2(text_path, dst_path)
                 copied += 1
                 self.logger.info(f"匹配: {text_path.name} -> {target_name}")
-            if copied == 0:
-                raise Exception("没有成功复制任何匹配的熟肉图片")
-            self.logger.info(f"已复制 {copied} 张匹配后的熟肉图片到工作目录: {dst_dir}")
+            self.logger.info(f"已复制 {copied} 张匹配后的文本图片到工作目录: {dst_dir}")
         
         elif self.automatch:
             # 自动匹配模式：根据图像相似度匹配并重命名复制
@@ -186,16 +190,16 @@ class MangaTransFerPipeline:
                 shutil.copy2(text_path, dst_path)
                 copied += 1
                 self.logger.info(f"匹配: {text_path.name} -> {target_name}")
-            if copied == 0:
-                raise Exception("没有成功复制任何匹配的熟肉图片")
-            self.logger.info(f"已复制 {copied} 张匹配后的熟肉图片到工作目录: {dst_dir}")
+            # if copied == 0:
+            #     raise Exception("没有成功复制任何匹配的文本图片")
+            self.logger.info(f"已复制 {copied} 张匹配后的文本图片到工作目录: {dst_dir}")
         
         else:
             # 直接复制所有熟肉图片（不重命名）
-            self.logger.info("未启用自动匹配，直接复制所有熟肉图片...")
+            self.logger.info("未启用自动匹配，直接复制所有文本图片...")
             text_images = self._get_sorted_images(src_dir)
             if not text_images:
-                raise Exception(f"熟肉目录中没有图片文件: {src_dir}")
+                raise Exception(f"文本图片目录中没有图片文件: {src_dir}")
             copied = 0
             for img_path in text_images:
                 dst_path = dst_dir / img_path.name
@@ -204,8 +208,8 @@ class MangaTransFerPipeline:
                 copied += 1
                 self.logger.info(f"已复制: {img_path.name}")
             if copied == 0:
-                raise Exception("没有成功复制任何熟肉图片")
-            self.logger.info(f"已复制 {copied} 张熟肉图片到工作目录: {dst_dir}")
+                raise Exception("没有成功复制任何文本图片")
+            self.logger.info(f"已复制 {copied} 张文本图片到工作目录: {dst_dir}")
         
         # 更新 self.text_dir 指向工作目录
         self.text_dir = dst_dir
@@ -217,46 +221,48 @@ class MangaTransFerPipeline:
             status_callback=lambda idx, total: self.logger.info(f"调整图片 {idx}/{total}")
         )
         
-        if resize_count == 0:
-            raise Exception("没有成功调整任何熟肉图片尺寸")
+        # if resize_count == 0:
+        #     raise Exception("没有成功调整任何文本图片尺寸")
         
         self.logger.info(f"成功调整 {resize_count} 张图片")
         return True
     
     def step2_detect_text(self, directories):
-        """步骤2: 文字检测（熟肉和生肉）"""
-        self.logger.info("步骤2: 文字检测")
-        
-        # 检测熟肉文字
-        self.logger.info("检测熟肉文字...")
-        text_detector = ComicTextDetector(
-            img_dir=str(self.text_dir),
-            save_dir=str(directories['text_mask']),
-            model_path=str(self.model_path),
-            save_json=True,
-            device='cuda',
-            logger=self.logger
-        )
-        text_detector.detect()
+        """步骤2: 文字检测"""
+        self.logger.info("[2/7] 文字检测")
         
         # 检测生肉文字
-        self.logger.info("检测生肉文字...")
+        self.logger.info("检测原始图片文字...")
         raw_detector = ComicTextDetector(
             img_dir=str(self.raw_dir),
             save_dir=str(directories['raw_mask']),
             model_path=str(self.model_path),
             save_json=True,
-            device='cuda',
-            logger=self.logger
+            device='cuda' if torch.cuda.is_available() else "cpu",
+            logger=self.logger,
+            status_callback=lambda idx, total: self.logger.info(f"检测原始图片 {idx}/{total}")
         )
         raw_detector.detect()
+
+        # 检测熟肉文字
+        self.logger.info("检测文本图片文字...")
+        text_detector = ComicTextDetector(
+            img_dir=str(self.text_dir),
+            save_dir=str(directories['text_mask']),
+            model_path=str(self.model_path),
+            save_json=True,
+            device='cuda' if torch.cuda.is_available() else "cpu",
+            logger=self.logger,
+            status_callback=lambda idx, total: self.logger.info(f"检测文本图片 {idx}/{total}")
+        )
+        text_detector.detect()
         
         self.logger.info("文字检测完成")
         return True
     
     def step3_match_boxes(self, directories):
         """步骤3: 文本框匹配"""
-        self.logger.info("步骤3: 文本框匹配")
+        self.logger.info("[3/7] 文本框匹配")
         
         text_annotations = directories['text_mask'] / "annotations.json"
         raw_annotations = directories['raw_mask'] / "annotations.json"
@@ -278,8 +284,8 @@ class MangaTransFerPipeline:
         return match_output
     
     def step4_adjust_coordinates(self, directories):
-        """步骤4: 熟肉坐标调整"""
-        self.logger.info("步骤4: 熟肉坐标调整")
+        """步骤4: 文本框坐标调整"""
+        self.logger.info("[4/7] 文本框坐标调整")
         
         annotations_path = directories['text_mask'] / "annotations.json"
         
@@ -297,8 +303,8 @@ class MangaTransFerPipeline:
         return True
     
     def step5_extract_text(self, directories):
-        """步骤5: 熟肉文字提取"""
-        self.logger.info("步骤5: 熟肉文字提取")
+        """步骤5: 文字提取"""
+        self.logger.info("[5/7] 文字提取")
         
         processed_count = extract_text_from_masks(
             input_dir=str(self.text_dir),
@@ -307,15 +313,15 @@ class MangaTransFerPipeline:
             dilation_iterations=2
         )
         
-        if processed_count == 0:
-            raise Exception("没有成功提取任何文字")
+        # if processed_count == 0:
+        #     raise Exception("没有成功提取任何文字")
             
         self.logger.info(f"成功提取 {processed_count} 张图片的文字")
         return True
     
     def step6_inpaint_raw(self, directories):
-        """步骤6: 生肉图片修复"""
-        self.logger.info("步骤6: 生肉图片修复")
+        """步骤6: 图片修复"""
+        self.logger.info("[6/7] 图片修复")
 
         start_time = time.time()
         
@@ -338,18 +344,18 @@ class MangaTransFerPipeline:
         return True
     
     def step7_apply_text(self, match_output_path):
-        """步骤7: 文字贴图"""
-        self.logger.info("步骤7: 文字贴图")
+        """步骤7: 文字移植"""
+        self.logger.info("[7/7] 文字移植")
         
         success = apply_text_to_inpainted_step(
             json_path=str(match_output_path),
-            status_callback=lambda idx, total: self.logger.info(f"贴图处理 {idx}/{total}")
+            status_callback=lambda idx, total: self.logger.info(f"移植处理 {idx}/{total}")
         )
         
         if not success:
-            raise Exception("文字贴图失败")
+            raise Exception("文字移植失败")
             
-        self.logger.info("文字贴图完成")
+        self.logger.info("文字移植完成")
         return True
     
     def run(self):

@@ -502,7 +502,7 @@ window.initMatchResultPanel = function(textDir, thumbDir) {
 
     function getBestImageUrl(baseName, originalFileName) {
         return new Promise(function(resolve) {
-            var thumbUrl = '/thumb/thumb_text_' + baseName + '.jpg';
+            var thumbUrl = '/thumbs/thumb_text_' + baseName + '.jpg';
             var originalUrl = '/text_original/' + encodeURIComponent(originalFileName);
             var testImg = new Image();
             testImg.onload = function() { resolve(thumbUrl); };

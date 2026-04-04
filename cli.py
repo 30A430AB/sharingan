@@ -271,7 +271,7 @@ class MangaTransFerPipeline:
         # 获取 raw 图片总数用于进度条
         raw_images = self._get_sorted_images(self.raw_dir)
         total_raw = len(raw_images)
-        pbar = tqdm(total=total_raw, desc="文本框匹配", unit="张",
+        pbar = tqdm(total=total_raw, desc="文本匹配", unit="张",
                     bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}')
 
         def progress_callback(idx, total):

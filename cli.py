@@ -7,16 +7,6 @@ from tqdm import tqdm
 import torch
 import json
 
-from core.config import ResourceManager
-def ensure_resources_before_import():
-    try:
-        ResourceManager.ensure_all()
-    except Exception as e:
-        print(f"资源准备失败: {e}")
-        sys.exit(1)
-
-ensure_resources_before_import()
-
 from core.detection import ComicTextDetector
 from core.box_refiner import CoordinateAdjuster
 from core.matching import match_and_create_masks, match_images
@@ -177,8 +167,8 @@ class MangaTransFerPipeline:
         elif self.automatch:
             self.logger.info("启用自动匹配模式，正在计算图片相似度...")
             match_model_path = DataPaths.RESNET18
-            if not match_model_path.exists():
-                raise Exception(f"匹配模型不存在: {match_model_path}")
+            # if not match_model_path.exists():
+            #     raise Exception(f"匹配模型不存在: {match_model_path}")
 
             matches = match_images(
                 raw_dir=str(self.raw_dir),
@@ -461,10 +451,10 @@ def main():
     
     # 固定模型路径（默认位置）
     model_path = DataPaths.COMIC_TEXT_DETECTOR
-    if not model_path.exists():
-        print(f"错误: 模型文件不存在 - {model_path}")
-        print("请确保 comictextdetector.pt 模型文件存在于 data/models/ 目录下")
-        return
+    # if not model_path.exists():
+    #     print(f"错误: 模型文件不存在 - {model_path}")
+    #     print("请确保 comictextdetector.pt 模型文件存在于 data/models/ 目录下")
+    #     return
     
     try:
         # 创建并运行流程（输出目录默认为生肉目录）

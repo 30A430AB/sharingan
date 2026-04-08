@@ -10,7 +10,7 @@ import glob
 import torch.nn as nn
 #from .utils.weight_init import init_weights
 from .models.yolov5.common import C3, Conv
-from torchsummary import summary
+# from torchsummary import summary
 import torch.nn.functional as F
 import copy
 
@@ -256,6 +256,7 @@ class TextDetBaseDNN:
         return blks, mask, lines_map
 
 if __name__ == '__main__':
+    from torchsummary import summary
     device = 'cuda'
     weights = r'data/yolov5sblk.ckpt'
 

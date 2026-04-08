@@ -1,7 +1,7 @@
 
 import os
 import logging
-import wandb
+# import wandb
 import torch
 
 def set_logging(name=None, verbose=True):
@@ -30,6 +30,7 @@ class Loggers():
         self.wandb = None
         self.writer = None
         if self.type == LOGGER_WANDB:
+            import wandb
             if hyp['logger']['project'] == '':
                 project = 'ComicTextDetector'
             else:

@@ -18,6 +18,9 @@ from PIL import Image
 from pathlib import Path
 import sys
 
+from .config import DataPaths, ResourceManager
+
+
 current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent
 
@@ -49,17 +52,64 @@ class CMatT(ctypes.Structure):
         ('dtype', ctypes.c_int)
     ]
     
-if sys.platform == "win32":
-    patchmatchlib = str(project_root / "data" / "libs" / "patchmatch_inpaint.dll")
-elif sys.platform == "darwin":
-    patchmatchlib = str(project_root / "data" / "libs" / "macos_libpatchmatch_inpaint.dylib")
-    opencv_world = glob(str(project_root / "data" / "libs" / "macos_libopencv_world.*.dylib"))
-    if opencv_world:
-        ctypes.CDLL(opencv_world[0])
-else:
-    patchmatchlib = str(project_root / "data" / "libs" / "libpatchmatch.so")
+# if sys.platform == "win32":
+#     patchmatchlib = str(project_root / "data" / "libs" / "patchmatch_inpaint.dll")
+# elif sys.platform == "darwin":
+#     patchmatchlib = str(project_root / "data" / "libs" / "macos_libpatchmatch_inpaint.dylib")
+#     opencv_world = glob(str(project_root / "data" / "libs" / "macos_libopencv_world.*.dylib"))
+#     if opencv_world:
+#         ctypes.CDLL(opencv_world[0])
+# else:
+#     patchmatchlib = str(project_root / "data" / "libs" / "libpatchmatch.so")
 
-PMLIB = ctypes.CDLL(patchmatchlib)
+# PMLIB = ctypes.CDLL(patchmatchlib)
+
+def _load_patchmatch_lib():
+    """加载动态库，若文件缺失则自动下载"""
+    if sys.platform == "darwin":
+        # macOS 暂不实现自动下载（若需要可自行添加）
+        lib_path = project_root / "data" / "libs" / "macos_libpatchmatch_inpaint.dylib"
+        opencv_wildcard = str(project_root / "data" / "libs" / "macos_libopencv_world.*.dylib")
+        opencv_files = glob(opencv_wildcard)
+        if opencv_files:
+            ctypes.CDLL(opencv_files[0])
+        return ctypes.CDLL(str(lib_path))
+    
+    # Windows 和 Linux 统一通过 DataPaths 获取（自动下载）
+    if sys.platform == "win32":
+        lib_key = "libs/patchmatch_inpaint.dll"
+        opencv_key = "libs/opencv_world455.dll"
+    else:  # Linux
+        lib_key = "libs/libpatchmatch.so"
+        opencv_key = None
+    
+    # 第一次尝试：通过 DataPaths 获取（内部会调用 ResourceManager.get_file）
+    try:
+        if lib_key == "libs/libpatchmatch.so":
+            lib_path = DataPaths.PATCHMATCH_SO
+        else:
+            lib_path = ResourceManager.get_file(lib_key)
+        
+        if lib_path is None:
+            raise FileNotFoundError(f"当前平台不需要 {lib_key}")
+        
+        # 加载 OpenCV 依赖（仅 Windows）
+        if opencv_key:
+            opencv_path = ResourceManager.get_file(opencv_key)
+            if opencv_path:
+                ctypes.CDLL(str(opencv_path))
+        
+        return ctypes.CDLL(str(lib_path))
+    
+    except (OSError, FileNotFoundError) as e:
+        error_msg = f"加载动态库失败: {e}\n"
+        if sys.platform == "linux":
+            error_msg += "请运行 'ldd <库文件路径>' 查看缺失的依赖。\n"
+            error_msg += "确保所有依赖库已通过 ResourceManager 下载并按顺序加载。"
+        raise RuntimeError(error_msg) from e
+# 全局加载
+PMLIB = _load_patchmatch_lib()
+
 PMLIB.PM_set_random_seed.argtypes = [ctypes.c_uint]
 PMLIB.PM_set_verbose.argtypes = [ctypes.c_int]
 PMLIB.PM_free_pymat.argtypes = [CMatT]

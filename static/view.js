@@ -120,11 +120,6 @@ function generateThumbnails(thumbnails, directory) {
 }
 
 function loadImage(key, directory) {
-    // 不再自动保存当前页数据
-    // if (window.canvasControls && window.canvasControls.updateCurrentPageData) {
-    //     window.canvasControls.updateCurrentPageData();
-    // }
-
     // 保存参考图可见状态
     const wasWorkingVisible = window.canvasControls && window.canvasControls.isWorkingReferenceVisible ? window.canvasControls.isWorkingReferenceVisible() : false;
     if (window.canvasControls && window.canvasControls.removeWorkingReference) {
@@ -150,12 +145,19 @@ function loadImage(key, directory) {
             window.currentImg = key;
             return window.canvasControls.loadLayers(data.originalImageUrl, data.inpaintedImageUrl, data.textBlocks)
                 .then(() => {
-                    // 传入 key 以便 updateTextBlocks 访问 window.projectPages
                     updateTextBlocks(data.textBlocks, key);
                     highlightCurrentThumbnail(key);
                     if (wasWorkingVisible) {
                         return window.canvasControls.loadWorkingReference();
                     }
+                })
+                .then(() => {
+                    // 自动保存当前页索引到项目文件（不阻塞UI）
+                    fetch('/update_current_page', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ directory: directory, current_img: key })
+                    }).catch(err => console.warn('自动保存当前页失败:', err));
                 });
         } else {
             showToast('加载图片失败：' + (data.error || '未知错误'), 'error');

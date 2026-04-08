@@ -8,6 +8,13 @@ _PROJECT_ROOT = Path(__file__).parent.parent
 # 支持的图片扩展名
 SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.avif'}
 
+class classproperty:
+    """使类方法可以像属性一样访问，不需要实例"""
+    def __init__(self, fget):
+        self.fget = fget
+    def __get__(self, instance, owner):
+        return self.fget(owner)
+    
 class DirPaths:
     TEMP = "temp"
     TEXT = "temp/text"
@@ -23,13 +30,29 @@ class DataPaths:
     MODELS_DIR = DATA_ROOT / "models"
     LIBS_DIR = DATA_ROOT / "libs"
 
-    COMIC_TEXT_DETECTOR = MODELS_DIR / "comictextdetector.pt"
-    RESNET18 = MODELS_DIR / "resnet18-f37072fd.pth"
-    LAMA = MODELS_DIR / "anime-manga-big-lama.pt"
+    @classproperty
+    def COMIC_TEXT_DETECTOR(cls):
+        return ResourceManager.get_file("models/comictextdetector.pt")
 
-    PATCHMATCH_SO = LIBS_DIR / "libpatchmatch.so"
-    OPENCV_DLL = LIBS_DIR / "opencv_world455.dll"
-    PATCHMATCH_INPAINT_DLL = LIBS_DIR / "patchmatch_inpaint.dll"
+    @classproperty
+    def RESNET18(cls):
+        return ResourceManager.get_file("models/resnet18-f37072fd.pth")
+
+    @classproperty
+    def LAMA(cls):
+        return ResourceManager.get_file("models/anime-manga-big-lama.pt")
+
+    @classproperty
+    def PATCHMATCH_SO(cls):
+        return ResourceManager.get_file("libs/libpatchmatch.so")
+
+    @classproperty
+    def OPENCV_DLL(cls):
+        return ResourceManager.get_file("libs/opencv_world455.dll")
+
+    @classproperty
+    def PATCHMATCH_INPAINT_DLL(cls):
+        return ResourceManager.get_file("libs/patchmatch_inpaint.dll")
 
 class InpaintAlgorithm:
     PATCHMATCH = "PatchMatch"
@@ -38,7 +61,7 @@ class InpaintAlgorithm:
 class ResourceManager:
     BASE_URL = "https://github.com/30A430AB/MangaTransFer/releases/download/v0.1.0/"
     
-    # 本地相对路径 (相对于 data/) -> (远程文件名, MD5)
+    # 本地相对路径 (相对于 data/) -> (远程文件名, SHA-256)
     FILES = {
         "models/comictextdetector.pt": ("comictextdetector.pt", "1f90fa60aeeb1eb82e2ac1167a66bf139a8a61b8780acd351ead55268540cccb"),
         "models/resnet18-f37072fd.pth": ("resnet18-f37072fd.pth", "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec"),
@@ -47,30 +70,36 @@ class ResourceManager:
         "libs/patchmatch_inpaint.dll": ("patchmatch_inpaint.dll", "0ba60cfe664c97629daa7e4d05c0888ebfe3edcb3feaf1ed5a14544079c6d7af"),
         "libs/opencv_world455.dll": ("opencv_world455.dll", "3b7619caa29dc3352b939de4e9981217a9585a13a756e1101a50c90c100acd8d"),
     }
-    
+
     @classmethod
-    def ensure_all(cls):
+    def get_file(cls, local_rel_path: str):
+        """按需获取资源文件，首次下载时校验哈希，后续仅检查存在性"""
+        if not cls._is_needed(local_rel_path):
+            return None
+
         data_root = Path(__file__).parent.parent / "data"
-        # 创建 Pooch 实例
+        local_path = data_root / local_rel_path
+
+        # 如果文件已存在，直接返回（不校验哈希）
+        if local_path.exists():
+            return local_path
+
+        # 文件不存在，使用 pooch 下载（下载时会自动校验哈希）
         pup = pooch.create(
             path=data_root,
             base_url=cls.BASE_URL,
-            version=None,           # 禁用版本子目录
+            version=None,
         )
-        # 自定义 URL 获取：根据本地路径的 basename 拼接 URL
         def get_url(key):
-            # key 例如 "models/comictextdetector.pt"
-            remote_filename = Path(key).name
-            return cls.BASE_URL + remote_filename
+            return cls.BASE_URL + Path(key).name
         pup.get_url = get_url
 
-        for local_rel_path, (remote_filename, md5) in cls.FILES.items():
-            if cls._is_needed(local_rel_path):
-                # 注册时使用本地相对路径作为 key
-                pup.registry[local_rel_path] = md5
-                # fetch 会根据 key 调用 get_url 下载并保存到 data_root/key
-                local_file = pup.fetch(local_rel_path)
-                # print(f"已就绪: {local_file}")
+        if local_rel_path not in pup.registry:
+            remote_filename, file_hash = cls.FILES[local_rel_path]
+            pup.registry[local_rel_path] = file_hash
+
+        fetched_path = pup.fetch(local_rel_path)  # 下载并校验
+        return Path(fetched_path)
     
     @staticmethod
     def _is_needed(local_rel_path):

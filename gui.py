@@ -11,18 +11,6 @@ import asyncio
 import concurrent.futures
 import multiprocessing
 from natsort import natsorted
-import sys
-
-from core.config import ResourceManager
-
-def ensure_resources_before_import():
-    try:
-        ResourceManager.ensure_all()
-    except Exception as e:
-        print(f"资源准备失败: {e}")
-        sys.exit(1)
-
-ensure_resources_before_import()
 
 
 from core.matching import match_images
@@ -695,7 +683,7 @@ class local_dir_picker(ui.dialog):
             can_go_up = self.path != self.upper_limit
         if can_go_up:
             row_data.append({
-                'name': '<i class="material-icons" style="font-size:16px;">folder</i> 上级目录',
+                'name': '<i class="material-icons" style="font-size:16px;">folder</i> 返回上一级',
                 'path': str(self.path.parent)
             })
 
@@ -801,6 +789,26 @@ async def load_project(request: Request):
     try:
         result = get_project_data(directory, pages, current_img)
         return result
+    except Exception as e:
+        return {'error': str(e)}
+
+@app.post('/update_current_page')
+async def update_current_page(request: Request):
+    data = await request.json()
+    directory = data.get('directory')
+    current_img = data.get('current_img')
+    if not directory or not current_img:
+        return {'error': '缺少 directory 或 current_img'}
+    json_path = os.path.join(directory, 'match_results.json')
+    if not os.path.exists(json_path):
+        return {'error': '项目文件不存在'}
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            project = json.load(f)
+        project['current_img'] = current_img
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(project, f, ensure_ascii=False, separators=(',', ':'))
+        return {'success': True}
     except Exception as e:
         return {'error': str(e)}
 

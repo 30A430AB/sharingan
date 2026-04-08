@@ -586,6 +586,13 @@ function isMaskBlank(canvas) {
 
 function loadLayers(originalUrl, inpaintedUrl, textBlocks) {
     return new Promise((resolve, reject) => {
+        // 清除旧的参考图，避免残留
+        if (workingReferenceImage) {
+            canvas.remove(workingReferenceImage);
+            workingReferenceImage = null;
+            workingReferenceVisible = false;
+            updateSplitButtonActive(false);  // 更新分栏按钮样式
+        }
         if (!canvas) {
             reject('Canvas not initialized');
             return;

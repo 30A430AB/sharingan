@@ -15,7 +15,7 @@ let imageWidth = 1920;
 let imageHeight = 1080;
 let currentRawOpacity = 100;
 let currentTextOpacity = 100;          // 修复层透明度
-let currentTextLayerOpacity = 100;      // 新增：文本层透明度，默认100
+let currentTextLayerOpacity = 100;      // 文本层透明度，默认100
 let workingReferenceImage = null;
 let workingReferenceVisible = false;
 
@@ -1162,8 +1162,7 @@ function loadWorkingReference() {
     .then(response => response.json())
     .then(data => {
         if (data.error) {
-            console.error('Failed to load working reference:', data.error);
-            window.showToast && window.showToast('加载参考图失败：' + data.error, 'error');
+            window.showToast && window.showToast('没有对应的参考图', 'error');
             return;
         }
         if (data.imageUrl) {

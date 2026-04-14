@@ -456,13 +456,6 @@ async def show_match_result_panel(matches, raw_dir, text_dir):
 
     await ui.run_javascript(f'window.initMatchResultPanel("{text_dir}", "{thumb_dir}");')
 
-    # 为原始图片添加静态路由（使 /text_original/xxx.png 能访问到 text_dir 下的文件）
-    # if not hasattr(app, '_text_original_mounted'):
-    #     app.add_static_files('/text_original', text_dir)
-    #     app._text_original_mounted = True
-
-        # 在 show_match_result_panel 函数中，创建 continue_btn 之后，添加以下代码
-
     async def on_continue():
         result_dialog.close()
         try:
@@ -572,16 +565,6 @@ with ui.element('div').classes('fixed top-0 left-0 w-full h-full').style('margin
                             with split_btn:
                                 ui.image('static/icons/view_column_2.svg').style('width: 24px; height: 24px')
 
-                            # split_btn = ui.button(icon='view_column_2', color='transparent') \
-                            #     .props('flat dense') \
-                            #     .on('click', lambda: ui.run_javascript('window.canvasControls.toggleWorkingReference()'))
-                            
-                            # new_btn = ui.button(color='transparent') \
-                            #     .props('flat dense') \
-                            #     .on('click', show_new_project_dialog)
-                            # with new_btn:
-                            #     ui.image('static/icons/create_new_folder.svg').style('width: 24px; height: 24px')
-
                             new_btn = ui.button(icon='o_create_new_folder', color='transparent') \
                                 .props('flat dense') \
                                 .on('click', show_new_project_dialog)
@@ -589,12 +572,6 @@ with ui.element('div').classes('fixed top-0 left-0 w-full h-full').style('margin
                             load_btn = ui.button(icon='folder_open', color='transparent') \
                                 .props('flat dense') \
                                 .on('click', lambda: ui.run_javascript('window.selectProjectFile()'))
-                            
-                            # save_btn = ui.button(color='transparent') \
-                            #     .props('flat dense') \
-                            #     .on('click', lambda: ui.run_javascript('window.saveProject()'))
-                            # with save_btn:
-                            #     ui.image('static/icons/save.svg').style('width: 24px; height: 24px')
 
                             save_btn = ui.button(icon='o_save', color='transparent') \
                                 .props('flat dense') \

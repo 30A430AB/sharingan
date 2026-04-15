@@ -317,7 +317,7 @@ ui.add_head_html(f'''
 IMAGE_EXTS = list(SUPPORTED_EXTENSIONS) + [ext.upper() for ext in SUPPORTED_EXTENSIONS]
 
 def show_new_project_dialog():
-    with ui.dialog() as dialog, ui.card().style('min-width: 400px;'):
+    with ui.dialog().props('persistent') as dialog, ui.card().style('min-width: 400px;'):
         ui.label('新建项目').classes('text-h6 w-full text-center')
         with ui.column().classes('w-full gap-4 p-4'):
             with ui.row().classes('w-full items-center gap-2'):
@@ -396,7 +396,7 @@ async def show_match_result_panel(matches, raw_dir, text_dir):
 
     with ui.dialog(value=True).props('persistent') as result_dialog, ui.card().style('width: 85vw; max-width: 1200px; max-height: 85vh;'):
         ui.label('图片匹配结果').classes('text-h6 w-full text-center mb-3')
-        with ui.scroll_area().style('height: calc(85vh - 160px); width: 100%;'):
+        with ui.scroll_area().classes('match-scroll-area').style('height: calc(85vh - 160px); width: 100%;'):
             with ui.row().classes('w-full flex-nowrap items-center p-2 bg-gray-100 sticky top-0 z-10'):
                 ui.label('原始图片').classes('w-1/3 text-center font-bold')
                 ui.label('文本图片').classes('w-1/3 text-center font-bold')
@@ -444,8 +444,11 @@ async def show_match_result_panel(matches, raw_dir, text_dir):
                         color = 'text-green-600' if sim >= 0.8 else 'text-orange-600' if sim >= 0.6 else 'text-red-600'
                         ui.label(f'{sim:.4f}').classes(f'text-lg font-bold {color}')
         await asyncio.sleep(0)
-
-    await ui.run_javascript(f'window.initMatchResultPanel("{text_dir}", "{thumb_dir}");')
+    try:
+        await ui.run_javascript(f'window.initMatchResultPanel("{text_dir}", "{thumb_dir}");')
+    except TimeoutError:
+        # 前端可能未及时响应，但脚本通常已成功执行
+        pass
 
     # 显式复制变量避免闭包引用问题
     _raw_dir = raw_dir

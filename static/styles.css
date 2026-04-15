@@ -177,7 +177,7 @@ body, html, #__nuxt, #__nuxt-container {
     cursor: default;
 }
 
-/* ==================== 全局滚动条样式（可爱清新风格） ==================== */
+/* ==================== 全局滚动条样式 ==================== */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -203,36 +203,33 @@ body, html, #__nuxt, #__nuxt-container {
     scrollbar-color: rgba(102, 204, 255, 0.4) rgba(245, 247, 250, 0.8);
 }
 
-/* ==================== 匹配面板滚动条（可爱清新风格） ==================== */
-/* 针对 NiceGUI 滚动区域内的滚动条 */
-.q-scrollarea__thumb {
-    background: rgba(102, 204, 255, 0.4) !important;
-    transition: background 0.3s ease !important;
+/* ==================== 匹配面板滚动条 ==================== */
+.match-scroll-area .q-scrollarea__thumb,
+.match-scroll-area .q-scrollarea__track {
+    display: none !important;
 }
 
-.q-scrollarea__thumb:hover {
-    background: rgba(102, 204, 255, 0.7) !important;
+.match-scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(102, 204, 255, 0.4) rgba(245, 247, 250, 0.8);
 }
 
-.q-scrollarea__thumb:active {
-    background: #66ccff !important;
+.match-scroll-area::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
 }
-
-/* 滚动条轨道背景（可选） */
-.q-scrollarea__track {
-    background: rgba(245, 247, 250, 0.8) !important;
-}
-
-/* 同时保留原生滚动条样式，作为后备 */
-.match-scroll-area::-webkit-scrollbar-thumb {
-    background: rgba(102, 204, 255, 0.4) !important;
+.match-scroll-area::-webkit-scrollbar-track {
+    background: rgba(245, 247, 250, 0.8);
     border-radius: 4px;
 }
-
-.match-scroll-area::-webkit-scrollbar-thumb:hover {
-    background: rgba(102, 204, 255, 0.7) !important;
+.match-scroll-area::-webkit-scrollbar-thumb {
+    background: rgba(102, 204, 255, 0.4);
+    border-radius: 4px;
+    transition: background 0.3s ease;
 }
-
+.match-scroll-area::-webkit-scrollbar-thumb:hover {
+    background: rgba(102, 204, 255, 0.7);
+}
 .match-scroll-area::-webkit-scrollbar-thumb:active {
-    background: #66ccff !important;
+    background: #66ccff;
 }

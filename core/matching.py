@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Union
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 import cv2
@@ -440,37 +441,40 @@ def match_images(raw_dir: str,
     raw_thumb_map = {}
     text_thumb_map = {}
     if generate_thumbnails:
-        if thumb_output_dir is None:
-            thumb_dir = Path(text_dir) / DirPaths.THUMBS
-        else:
-            thumb_dir = Path(thumb_output_dir)
+        thumb_dir = Path(raw_dir) / DirPaths.THUMBS
         thumb_dir.mkdir(parents=True, exist_ok=True)
 
-        for raw_path in raw_images:
-            name = Path(raw_path).stem
-            thumb_path = thumb_dir / f"thumb_raw_{name}.jpg"
+        def generate_thumb(path: Path, prefix: str) -> Optional[Tuple[str, str]]:
+            """生成单张缩略图，返回 (原路径, 缩略图路径) 或 None"""
+            name = path.stem
+            thumb_path = thumb_dir / f"{prefix}_{name}.jpg"
             try:
-                img = Image.open(raw_path)
+                img = Image.open(path)
                 img.thumbnail((150, 150))
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
                 img.save(thumb_path, 'JPEG', quality=85)
-                raw_thumb_map[raw_path] = str(thumb_path)
+                return str(path), str(thumb_path)
             except Exception as e:
-                logger.warning(f"生成 raw 缩略图失败 {raw_path}: {e}")
+                logger.warning(f"生成缩略图失败 {path}: {e}")
+                return None
 
-        for text_path in text_images:
-            name = Path(text_path).stem
-            thumb_path = thumb_dir / f"thumb_text_{name}.jpg"
-            try:
-                img = Image.open(text_path)
-                img.thumbnail((150, 150))
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                img.save(thumb_path, 'JPEG', quality=85)
-                text_thumb_map[text_path] = str(thumb_path)
-            except Exception as e:
-                logger.warning(f"生成 text 缩略图失败 {text_path}: {e}")
+        with ThreadPoolExecutor() as executor:
+            # 提交所有 raw 和 text 缩略图生成任务
+            raw_futures = {executor.submit(generate_thumb, Path(p), "thumb_raw"): p for p in raw_images}
+            text_futures = {executor.submit(generate_thumb, Path(p), "thumb_text"): p for p in text_images}
+
+            # 收集 raw 缩略图结果
+            for future in as_completed(raw_futures):
+                result = future.result()
+                if result:
+                    raw_thumb_map[result[0]] = result[1]
+
+            # 收集 text 缩略图结果
+            for future in as_completed(text_futures):
+                result = future.result()
+                if result:
+                    text_thumb_map[result[0]] = result[1]
 
     model = load_model(model_weights_path, device_obj)
     transform = get_transform()

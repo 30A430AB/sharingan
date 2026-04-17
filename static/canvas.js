@@ -900,7 +900,7 @@ function loadLayers(originalUrl, inpaintedUrl, textBlocks) {
 // ==================== 参考图操作 ====================
 function loadWorkingReference() {
     if (!window.projectDirectory || !window.currentImg) {
-        window.showToast && window.showToast('没有加载项目', 'error');
+        window.showToast && window.showToast('项目未加载', 'error');
         return Promise.reject('No project loaded');
     }
     if (!CanvasState.comicImage) {
@@ -957,7 +957,7 @@ function loadWorkingReference() {
 
 function toggleWorkingReference() {
     if (!window.projectDirectory || !window.currentImg) {
-        window.showToast && window.showToast('没有加载项目', 'error');
+        window.showToast && window.showToast('项目未加载', 'error');
         return;
     }
     if (!CanvasState.comicImage) {

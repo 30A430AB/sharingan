@@ -33,8 +33,8 @@ body, html, #__nuxt, #__nuxt-container {
 }
 
 .thumbnail-card:hover {
-    border: 1px solid #66ccff;
-    box-shadow: 0 4px 12px rgba(102, 204, 255, 0.2);  /* 统一主题蓝淡阴影 */
+    border: 1px solid #6495ED;
+    box-shadow: 0 4px 12px rgba(100, 149, 237, 0.4);
 }
 
 .thumbnail-card::before {
@@ -69,7 +69,7 @@ body, html, #__nuxt, #__nuxt-container {
     -webkit-backdrop-filter: blur(8px);
     border-radius: 10px;
     border: 1px solid rgba(226, 232, 240, 0.6);
-    box-shadow: 0 2px 8px rgba(102, 204, 255, 0.08);   /* 改用主题色 */
+    box-shadow: 0 2px 8px rgba(100, 149, 237, 0.08);
     transition: all 0.3s ease;
     margin-bottom: 8px;
     cursor: pointer;
@@ -77,8 +77,8 @@ body, html, #__nuxt, #__nuxt-container {
 
 .text-block-card:hover {
     background: rgba(255, 255, 255, 0.95);
-    border-color: #66ccff;
-    box-shadow: 0 6px 16px rgba(102, 204, 255, 0.15);   /* 统一 */
+    border-color: #6495ED;
+    box-shadow: 0 6px 16px rgba(100, 149, 237, 0.15);
     transform: translateY(-2px);
 }
 
@@ -122,15 +122,14 @@ body, html, #__nuxt, #__nuxt-container {
 }
 
 .text-block-button:hover {
-    color: #66ccff;                              /* 统一主题色 */
-    background: rgba(102, 204, 255, 0.12);
+    color: #6495ED;                              /* 矢车菊蓝 */
+    background: rgba(100, 149, 237, 0.12);
 }
 
 .text-block-button .material-icons {
     font-size: 18px !important;
 }
 
-/* 合并工具按钮样式，避免重复定义 */
 .tool-button {
     width: 40px !important;
     height: 40px !important;
@@ -151,10 +150,10 @@ body, html, #__nuxt, #__nuxt-container {
 }
 
 .tool-button:hover {
-    border-color: #66ccff;
-    color: #66ccff;
+    border-color: #6495ED;
+    color: #6495ED;
     background: linear-gradient(135deg, #F0F9FF 0%, #E6F7FF 100%);
-    box-shadow: 0 4px 8px rgba(102, 204, 255, 0.15);
+    box-shadow: 0 4px 8px rgba(100, 149, 237, 0.15);
     transform: translateY(-1px);
 }
 
@@ -187,20 +186,20 @@ body, html, #__nuxt, #__nuxt-container {
     border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb {
-    background: rgba(102, 204, 255, 0.4);        /* 主题蓝浅色 */
+    background: rgba(100, 149, 237, 0.4);        /* 矢车菊蓝浅色 */
     border-radius: 4px;
     transition: background 0.3s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(102, 204, 255, 0.7);
+    background: rgba(100, 149, 237, 0.7);
 }
 ::-webkit-scrollbar-thumb:active {
-    background: #66ccff;
+    background: #6495ED;
 }
 /* Firefox 滚动条样式 */
 * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(102, 204, 255, 0.4) rgba(245, 247, 250, 0.8);
+    scrollbar-color: rgba(100, 149, 237, 0.4) rgba(245, 247, 250, 0.8);
 }
 
 /* ==================== 匹配面板滚动条 ==================== */
@@ -211,7 +210,7 @@ body, html, #__nuxt, #__nuxt-container {
 
 .match-scroll-area {
     scrollbar-width: thin;
-    scrollbar-color: rgba(102, 204, 255, 0.4) rgba(245, 247, 250, 0.8);
+    scrollbar-color: rgba(100, 149, 237, 0.4) rgba(245, 247, 250, 0.8);
 }
 
 .match-scroll-area::-webkit-scrollbar {
@@ -223,13 +222,14 @@ body, html, #__nuxt, #__nuxt-container {
     border-radius: 4px;
 }
 .match-scroll-area::-webkit-scrollbar-thumb {
-    background: rgba(102, 204, 255, 0.4);
+    background: rgba(100, 149, 237, 0.4);
     border-radius: 4px;
     transition: background 0.3s ease;
 }
 .match-scroll-area::-webkit-scrollbar-thumb:hover {
-    background: rgba(102, 204, 255, 0.7);
+    background: rgba(100, 149, 237, 0.7);
 }
 .match-scroll-area::-webkit-scrollbar-thumb:active {
-    background: #66ccff;
+    background: #6495ED;
 }
+

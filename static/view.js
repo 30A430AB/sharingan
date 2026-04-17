@@ -434,7 +434,7 @@ function highlightCurrentThumbnail(currentKey) {
 
 window.goToPrevPage = function() {
     if (!window.projectPages || !window.currentImg || !window.projectDirectory) {
-        showToast('没有加载项目', 'error');
+        showToast('项目未加载', 'error');
         return;
     }
     const keys = Object.keys(window.projectPages);
@@ -449,7 +449,7 @@ window.goToPrevPage = function() {
 
 window.goToNextPage = function() {
     if (!window.projectPages || !window.currentImg || !window.projectDirectory) {
-        showToast('没有加载项目', 'error');
+        showToast('项目未加载', 'error');
         return;
     }
     const keys = Object.keys(window.projectPages);
@@ -488,26 +488,40 @@ window.initMatchResultPanel = function(textDir, thumbDir) {
 
                     const img = wrapper.querySelector('img');
                     wrapper.dataset.deleted = 'true';
-                    img.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-                    img.style.height = '150px';
-                    img.style.width = 'auto';
-                    img.style.objectFit = 'none';
-                    img.style.backgroundImage = "url('/static/icons/add.svg')";
-                    img.style.backgroundRepeat = 'no-repeat';
-                    img.style.backgroundPosition = 'center';
-                    img.style.backgroundSize = '24px 24px';
+
+                    // 隐藏原始图片
+                    img.style.display = 'none';
                     delBtn.style.display = 'none';
 
+                    // 确保 wrapper 有固定高度，使绝对定位的图标能够垂直居中
+                    wrapper.style.height = '150px';
+                    wrapper.style.display = 'inline-block'; // 保持与原图片一致
+
+                    // 移除可能已存在的旧图标
+                    const oldIcon = wrapper.querySelector('.add-placeholder-icon');
+                    if (oldIcon) oldIcon.remove();
+
+                    // 创建 Material 加号图标作为占位符
+                    const addIcon = document.createElement('i');
+                    addIcon.className = 'material-icons add-placeholder-icon';
+                    addIcon.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 36px; color: #888; cursor: pointer; line-height: 1; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;';
+                    addIcon.textContent = 'add';
+                    wrapper.style.position = 'relative';
+                    wrapper.appendChild(addIcon);
+
+                    // 清除文件名标签
                     const nameLabel = wrapper.closest('.row')?.querySelector('.text-col .text-xs');
                     if (nameLabel) nameLabel.innerText = '';
 
-                    img.onclick = () => {
+                    // 点击加号图标打开选择器
+                    addIcon.onclick = () => {
                         if (wrapper.dataset.deleted === 'true') {
                             const row = wrapper.closest('[data-raw-path]');
                             showImageSelector(row);
                         }
                     };
 
+                    // 向后端发送清空请求
                     const row = wrapper.closest('[data-raw-path]');
                     if (row) {
                         const rawPath = row.getAttribute('data-raw-path');
@@ -545,6 +559,10 @@ window.initMatchResultPanel = function(textDir, thumbDir) {
             const delBtn = wrapper.querySelector('.del-btn');
             if (delBtn) delBtn.style.display = 'none';
             wrapper.dataset.deleted = 'false';
+            const img = wrapper.querySelector('img');
+            if (img) img.style.display = 'block';
+            const oldIcon = wrapper.querySelector('.add-placeholder-icon');
+            if (oldIcon) oldIcon.remove();
         });
     }, 150);
 };
@@ -591,13 +609,20 @@ function createModal() {
                 const imgEl = wrapper.querySelector('img');
                 const nameLabel = currentRow.querySelector('.text-col .text-xs');
                 if (nameLabel) nameLabel.innerText = originalFileName;
-                if (imgEl) {
-                    imgEl.src = finalImageUrl;
-                    imgEl.style.backgroundImage = 'none';
-                    imgEl.style.objectFit = '';
-                    imgEl.style.height = '150px';
-                    imgEl.style.width = 'auto';
-                }
+
+                // 移除加号占位图标
+                const addIcon = wrapper.querySelector('.add-placeholder-icon');
+                if (addIcon) addIcon.remove();
+
+                // 恢复图片显示
+                imgEl.style.display = 'block';
+                imgEl.src = finalImageUrl;
+                imgEl.style.backgroundImage = 'none';
+                imgEl.style.objectFit = '';
+                imgEl.style.height = '150px';
+                imgEl.style.width = 'auto';
+                imgEl.style.backgroundColor = 'transparent';
+
                 wrapper.dataset.deleted = 'false';
                 imgEl.onclick = null;
                 

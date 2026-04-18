@@ -1153,7 +1153,7 @@ window.canvasControls = {
             top: 200,                 // 初始垂直位置
             fontSize: 28,
             fontFamily: 'system-ui, "Segoe UI", Roboto, sans-serif',
-            fill: '#2c3e50',          // 文字颜色
+            fill: '#000000',          // 文字颜色
             fontWeight: 'normal',
             fontStyle: 'normal',
             underline: false,
@@ -1400,7 +1400,7 @@ window.chooseTextColor = function() {
     }
 
     // 当前颜色
-    let currentColor = activeObj.fill || '#2c3e50';
+    let currentColor = activeObj.fill || '#000000';
     // 转换为HSV便于处理
     let hsv = hexToHsv(currentColor);
 

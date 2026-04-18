@@ -305,8 +305,8 @@ current_algorithm = InpaintAlgorithm.PATCHMATCH
 
 ui.add_head_html('<link rel="stylesheet" href="/static/styles.css">')
 ui.add_head_html('<script src="/static/fabric.min.js"></script>')
-ui.add_head_html('<script src="/static/canvas.js"></script>')
 ui.add_head_html('<script src="/static/view.js"></script>')
+ui.add_head_html('<script src="/static/canvas.js"></script>')
 ui.add_head_html(f'''
 <script>
     window.ALGO_PATCHMATCH = "{InpaintAlgorithm.PATCHMATCH}";
@@ -590,35 +590,34 @@ with ui.element('div').classes('fixed top-0 left-0 w-full h-full').style('margin
 
                         with ui.element('div').style('width:40px; height:100%; background-color:#ffffff; border-left:1px solid #E0E0E0; display:flex; flex-direction:column; align-items:center; padding-top:10px; gap:10px;').props('id="right-button-bar"'):
                             # 插入文本
-                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.canvasControls.insertTextBlock()')).tooltip('添加文本'):
+                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.canvasControls.insertTextBlock()')):
                                 ui.html(f'<img src="{SVG_ICONS["insert_text"]}" style="width:24px;height:24px;">')
                             # 选择字体
-                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.selectFontFamily()')).tooltip('选择字体'):
+                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.selectFontFamily()')):
                                 ui.html(f'<img src="{SVG_ICONS["brand_family"]}" style="width:24px;height:24px;">')
                             # 字号增大
-                            ui.button(icon='text_increase', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.increaseFontSize()')).tooltip('增大字号')
+                            ui.button(icon='text_increase', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.increaseFontSize()'))
                             # 字号减小
-                            ui.button(icon='text_decrease', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.decreaseFontSize()')).tooltip('减小字号')
+                            ui.button(icon='text_decrease', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.decreaseFontSize()'))
                             # 加粗
-                            ui.button(icon='format_bold', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.toggleFontBold()')).tooltip('加粗')
+                            ui.button(icon='format_bold', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.toggleFontBold()'))
                             # 斜体
-                            ui.button(icon='format_italic', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.toggleItalic()')).tooltip('斜体')
+                            ui.button(icon='format_italic', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.toggleItalic()'))
                             # 字体颜色
-                            with ui.button(color='transparent').props('flat dense id="font-color-btn"').on('click', lambda: ui.run_javascript('window.chooseTextColor()')).tooltip('字体颜色'):
+                            with ui.button(color='transparent').props('flat dense id="font-color-btn"').on('click', lambda: ui.run_javascript('window.chooseTextColor()')):
                                 ui.html(f'<img src="{SVG_ICONS["format_color_text"]}" style="width:24px;height:24px;">')
                             # 字体描边
-                            ui.button(icon='o_font_download', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setTextStroke()')).tooltip('字体描边')
+                            ui.button(icon='o_font_download', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setTextStroke()'))
                             # 行距
-                            ui.button(icon='format_line_spacing', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setLineSpacing()')).tooltip('行距')
+                            ui.button(icon='format_line_spacing', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setLineSpacing()'))
                             # 字间距
-                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setLetterSpacing()')).tooltip('字间距'):
+                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setLetterSpacing()')):
                                 ui.html(f'<img src="{SVG_ICONS["format_letter_spacing_2"]}" style="width:24px;height:24px;">')
                             # 文字方向：左到右
-                            ui.button(icon='format_textdirection_l_to_r', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setTextDirectionLTR()')).tooltip('从左到右')
+                            ui.button(icon='format_textdirection_l_to_r', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setTextDirectionLTR()'))
                             # 文字方向：右到左
-                            ui.button(icon='format_textdirection_r_to_l', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setTextDirectionRTL()')).tooltip('从右到左')
-                            # 竖排文字
-                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setTextDirectionVertical()')).tooltip('竖排文字'):
+                            ui.button(icon='format_textdirection_r_to_l', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setTextDirectionRTL()'))
+                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setTextDirectionVertical()')):
                                 ui.html(f'<img src="{SVG_ICONS["format_textdirection_on_vertical"]}" style="width:24px;height:24px;">')
                                   
             with ui.element('div').classes('bg-white').style('height:40px; flex-shrink:0; margin:0; padding:0; width:100%; display:flex; align-items:center; border-top:1px solid #E0E0E0; box-sizing:border-box;').props('name="zoom-bar"'):

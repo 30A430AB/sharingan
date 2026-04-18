@@ -590,7 +590,7 @@ with ui.element('div').classes('fixed top-0 left-0 w-full h-full').style('margin
 
                         with ui.element('div').style('width:40px; height:100%; background-color:#ffffff; border-left:1px solid #E0E0E0; display:flex; flex-direction:column; align-items:center; padding-top:10px; gap:10px;').props('id="right-button-bar"'):
                             # 插入文本
-                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.insertTextBlock()')).tooltip('添加文本'):
+                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.canvasControls.insertTextBlock()')).tooltip('添加文本'):
                                 ui.html(f'<img src="{SVG_ICONS["insert_text"]}" style="width:24px;height:24px;">')
                             # 选择字体
                             with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.selectFontFamily()')).tooltip('选择字体'):

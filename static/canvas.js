@@ -353,6 +353,14 @@ function onCanvasMouseDown(opt) {
         }
     }
 
+    // 如果点击到可交互的 fabric 对象（如用户添加的文本框），则不启动画布拖拽
+    if (opt.target && 
+        opt.target !== CanvasState.comicImage && 
+        opt.target !== CanvasState.inpaintedImage && 
+        opt.target !== CanvasState.workingReferenceImage) {
+        return;
+    }
+
     if (CanvasState.currentTool === 'drag' && CanvasState.currentScale > CanvasState.minScale) {
         CanvasState.isDragging = true;
         CanvasState.lastPosX = evt.clientX;
@@ -1126,7 +1134,49 @@ window.canvasControls = {
             return { image: CanvasState.comicImage, width: CanvasState.imageWidth, height: CanvasState.imageHeight };
         }
         return null;
-    }
+    },
+    // 添加文本框（参照HTML示例）
+    insertTextBlock: function() {
+        // 检查画布与原图是否已加载
+        if (!CanvasState.canvas) {
+            window.showToast && window.showToast('画布未初始化', 'error');
+            return;
+        }
+        if (!CanvasState.comicImage) {
+            window.showToast && window.showToast('请先加载图片', 'error');
+            return;
+        }
+
+        // 创建文本框
+        const textBox = new fabric.Textbox('新文本', {
+            left: 200,                // 初始水平位置
+            top: 200,                 // 初始垂直位置
+            fontSize: 28,
+            fontFamily: 'system-ui, "Segoe UI", Roboto, sans-serif',
+            fill: '#2c3e50',          // 文字颜色
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            underline: false,
+            editable: true,           // 允许双击编辑
+            hasControls: true,        // 显示控制点
+            lockScalingFlip: true,
+            width: 180,               // 初始宽度，支持自动换行
+            splitByGrapheme: true,    // 支持 emoji 等复杂字符
+        });
+
+        // 将文本框添加到画布
+        CanvasState.canvas.add(textBox);
+        // 设置为当前选中对象
+        CanvasState.canvas.setActiveObject(textBox);
+        // 刷新画布
+        CanvasState.canvas.renderAll();
+
+        // 可选：将文本框对象存入独立数组，便于后续管理（如批量删除、样式统一修改等）
+        if (!CanvasState.userTextBoxes) {
+            CanvasState.userTextBoxes = [];
+        }
+        CanvasState.userTextBoxes.push(textBox);
+    },
 };
 
 // 启动

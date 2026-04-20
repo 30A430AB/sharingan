@@ -1357,7 +1357,7 @@ window.toggleItalic = function() {
     CanvasState.canvas.renderAll();
 };
 
-// ==================== 字体颜色选择（模态对话框，仅通过按钮关闭） ====================
+// ==================== 字体颜色选择（带取色器，模态对话框） ====================
 window.chooseTextColor = function() {
     const activeObj = CanvasState.canvas.getActiveObject();
     if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
@@ -1377,7 +1377,7 @@ window.chooseTextColor = function() {
     panel.id = 'color-picker-panel';
     panel.style.cssText = `
         position: fixed;
-        width: 260px;
+        width: 280px;
         background: white;
         border: 1px solid #E0E0E0;
         border-radius: 8px;
@@ -1432,15 +1432,51 @@ window.chooseTextColor = function() {
     `;
     const hueCtx = hueCanvas.getContext('2d');
 
+    // 预览区域行（取色器 + 预览色块）
+    const previewRow = document.createElement('div');
+    previewRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+    `;
+
+    // 取色器按钮（吸管）
+    const eyedropperBtn = document.createElement('button');
+    eyedropperBtn.innerHTML = '<span class="material-icons" style="font-size:20px;">colorize</span>';
+    eyedropperBtn.title = '从屏幕取色';
+    eyedropperBtn.style.cssText = `
+        width: 36px;
+        height: 36px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        flex-shrink: 0;
+    `;
+    // 如果浏览器不支持 EyeDropper，则禁用按钮
+    if (!window.EyeDropper) {
+        eyedropperBtn.disabled = true;
+        eyedropperBtn.style.opacity = '0.5';
+        eyedropperBtn.style.cursor = 'not-allowed';
+        eyedropperBtn.title = '当前浏览器不支持取色器';
+    }
+
     // 预览色块
     const preview = document.createElement('div');
     preview.style.cssText = `
-        width: 100%;
-        height: 30px;
+        flex: 1;
+        height: 36px;
         border-radius: 4px;
         border: 1px solid #ddd;
-        margin-bottom: 12px;
     `;
+
+    previewRow.appendChild(eyedropperBtn);
+    previewRow.appendChild(preview);
 
     // 颜色值输入
     const hexInput = document.createElement('input');
@@ -1474,7 +1510,7 @@ window.chooseTextColor = function() {
 
     panel.appendChild(svCanvas);
     panel.appendChild(hueCanvas);
-    panel.appendChild(preview);
+    panel.appendChild(previewRow);
     panel.appendChild(hexInput);
     panel.appendChild(btnRow);
     document.body.appendChild(panel);
@@ -1618,6 +1654,21 @@ window.chooseTextColor = function() {
                 setColorFromHex(hex);
             }
         } catch (e) {}
+    });
+
+    // 取色器功能
+    eyedropperBtn.addEventListener('click', async () => {
+        if (!window.EyeDropper) {
+            window.showToast && window.showToast('当前浏览器不支持取色器', 'warning');
+            return;
+        }
+        try {
+            const eyeDropper = new EyeDropper();
+            const result = await eyeDropper.open();
+            setColorFromHex(result.sRGBHex);
+        } catch (e) {
+            // 用户取消操作，不做处理
+        }
     });
 
     // 关闭面板并清理事件

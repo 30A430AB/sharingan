@@ -1164,9 +1164,9 @@ window.canvasControls = {
             splitByGrapheme: true,    // 支持 emoji 等复杂字符
         });
 
-        // 隐藏所有缩放点，只保留旋转点
+        // 只保留旋转和左右控制柄
         textBox.setControlsVisibility({
-            mt: false, mb: false, ml: false, mr: false,
+            mt: false, mb: false, ml: true, mr: true,
             tl: false, tr: false, bl: false, br: false,
             mtr: true
         });
@@ -1751,6 +1751,228 @@ window.chooseTextColor = function() {
         }
         return { h: h * 360, s, v };
     }
+};
+
+// ==================== 行距调节功能 ====================
+window.setLineSpacing = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+
+    // 移除已有面板
+    const existingPanel = document.getElementById('line-spacing-panel');
+    if (existingPanel) {
+        existingPanel.remove();
+        return;
+    }
+
+    // 创建浮动面板
+    const panel = document.createElement('div');
+    panel.id = 'line-spacing-panel';
+    panel.style.cssText = `
+        position: fixed;
+        width: 260px;
+        background: white;
+        border: 1px solid #E0E0E0;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        padding: 16px;
+        box-sizing: border-box;
+        user-select: none;
+    `;
+
+    // 定位到右侧按钮栏左侧
+    const rightBar = document.getElementById('right-button-bar');
+    if (rightBar) {
+        const rect = rightBar.getBoundingClientRect();
+        panel.style.right = (window.innerWidth - rect.left + 10) + 'px';
+        panel.style.top = Math.max(10, rect.top) + 'px';
+    } else {
+        panel.style.right = '50px';
+        panel.style.top = '100px';
+    }
+
+    // 当前行距值（默认为 1.0）
+    const currentLineHeight = activeObj.lineHeight || 1.0;
+
+    // 创建说明标签
+    const label = document.createElement('div');
+    label.textContent = '行距倍数';
+    label.style.cssText = 'font-size: 14px; color: #333; margin-bottom: 12px;';
+
+    // 滑块容器
+    const sliderContainer = document.createElement('div');
+    sliderContainer.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-bottom: 20px;';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0.5';
+    slider.max = '3.0';
+    slider.step = '0.1';
+    slider.value = currentLineHeight;
+    slider.style.cssText = 'flex: 1;';
+
+    const valueDisplay = document.createElement('span');
+    valueDisplay.textContent = currentLineHeight.toFixed(1);
+    valueDisplay.style.cssText = 'min-width: 40px; text-align: right; font-size: 14px; color: #666;';
+
+    slider.addEventListener('input', () => {
+        const val = parseFloat(slider.value);
+        valueDisplay.textContent = val.toFixed(1);
+        activeObj.set('lineHeight', val);
+        CanvasState.canvas.renderAll();
+    });
+
+    sliderContainer.appendChild(slider);
+    sliderContainer.appendChild(valueDisplay);
+
+    // 按钮行
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = `
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    `;
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '取消';
+    cancelBtn.style.cssText = `padding:6px 12px;border:1px solid #ddd;background:white;border-radius:4px;cursor:pointer;`;
+    const applyBtn = document.createElement('button');
+    applyBtn.textContent = '应用';
+    applyBtn.style.cssText = `padding:6px 12px;border:none;background:#1976D2;color:white;border-radius:4px;cursor:pointer;`;
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(applyBtn);
+
+    panel.appendChild(label);
+    panel.appendChild(sliderContainer);
+    panel.appendChild(btnRow);
+    document.body.appendChild(panel);
+
+    // 关闭面板并清理
+    function closePanel(restore = true) {
+        if (restore) {
+            activeObj.set('lineHeight', currentLineHeight);
+            CanvasState.canvas.renderAll();
+        }
+        panel.remove();
+    }
+
+    cancelBtn.addEventListener('click', () => closePanel(true));
+    applyBtn.addEventListener('click', () => closePanel(false));
+};
+
+// ==================== 字间距调节功能 ====================
+window.setLetterSpacing = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+
+    // 移除已有面板
+    const existingPanel = document.getElementById('letter-spacing-panel');
+    if (existingPanel) {
+        existingPanel.remove();
+        return;
+    }
+
+    // 创建浮动面板
+    const panel = document.createElement('div');
+    panel.id = 'letter-spacing-panel';
+    panel.style.cssText = `
+        position: fixed;
+        width: 260px;
+        background: white;
+        border: 1px solid #E0E0E0;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        padding: 16px;
+        box-sizing: border-box;
+        user-select: none;
+    `;
+
+    // 定位到右侧按钮栏左侧
+    const rightBar = document.getElementById('right-button-bar');
+    if (rightBar) {
+        const rect = rightBar.getBoundingClientRect();
+        panel.style.right = (window.innerWidth - rect.left + 10) + 'px';
+        panel.style.top = Math.max(10, rect.top) + 'px';
+    } else {
+        panel.style.right = '50px';
+        panel.style.top = '100px';
+    }
+
+    // 当前字间距值（Fabric.js 中 charSpacing 单位为像素，默认为 0）
+    const currentCharSpacing = activeObj.charSpacing !== undefined ? activeObj.charSpacing : 0;
+
+    // 创建说明标签
+    const label = document.createElement('div');
+    label.textContent = '字间距 (px)';
+    label.style.cssText = 'font-size: 14px; color: #333; margin-bottom: 12px;';
+
+    // 滑块容器
+    const sliderContainer = document.createElement('div');
+    sliderContainer.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-bottom: 20px;';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '200';
+    slider.step = '1';
+    slider.value = currentCharSpacing;
+    slider.style.cssText = 'flex: 1;';
+
+    const valueDisplay = document.createElement('span');
+    valueDisplay.textContent = currentCharSpacing + 'px';
+    valueDisplay.style.cssText = 'min-width: 50px; text-align: right; font-size: 14px; color: #666;';
+
+    slider.addEventListener('input', () => {
+        const val = parseInt(slider.value);
+        valueDisplay.textContent = val + 'px';
+        activeObj.set('charSpacing', val);
+        CanvasState.canvas.renderAll();
+    });
+
+    sliderContainer.appendChild(slider);
+    sliderContainer.appendChild(valueDisplay);
+
+    // 按钮行
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = `
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    `;
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '取消';
+    cancelBtn.style.cssText = `padding:6px 12px;border:1px solid #ddd;background:white;border-radius:4px;cursor:pointer;`;
+    const applyBtn = document.createElement('button');
+    applyBtn.textContent = '应用';
+    applyBtn.style.cssText = `padding:6px 12px;border:none;background:#1976D2;color:white;border-radius:4px;cursor:pointer;`;
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(applyBtn);
+
+    panel.appendChild(label);
+    panel.appendChild(sliderContainer);
+    panel.appendChild(btnRow);
+    document.body.appendChild(panel);
+
+    // 关闭面板并清理
+    function closePanel(restore = true) {
+        if (restore) {
+            activeObj.set('charSpacing', currentCharSpacing);
+            CanvasState.canvas.renderAll();
+        }
+        panel.remove();
+    }
+
+    cancelBtn.addEventListener('click', () => closePanel(true));
+    applyBtn.addEventListener('click', () => closePanel(false));
 };
 
 // 启动

@@ -606,8 +606,6 @@ with ui.element('div').classes('fixed top-0 left-0 w-full h-full').style('margin
                             # 字体颜色
                             with ui.button(color='transparent').props('flat dense id="font-color-btn"').on('click', lambda: ui.run_javascript('window.chooseTextColor()')):
                                 ui.html(f'<img src="{SVG_ICONS["format_color_text"]}" style="width:24px;height:24px;">')
-                            # 字体描边
-                            ui.button(icon='o_font_download', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setTextStroke()'))
                             # 行距
                             ui.button(icon='format_line_spacing', color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setLineSpacing()'))
                             # 字间距

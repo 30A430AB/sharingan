@@ -194,7 +194,7 @@ class MangaTransFerPipeline:
             pbar.update(1)
 
         with tqdm(total=effective_match_count, desc="尺寸调整", unit="张",
-                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}') as pbar:
+                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', mininterval=0, miniters=1) as pbar:
             resize_text_images_to_match_raw(
                 raw_dir=str(self.raw_dir),
                 text_dir=str(self.text_dir),
@@ -215,7 +215,7 @@ class MangaTransFerPipeline:
             pbar.update(1)
 
         with tqdm(total=total_images, desc="文本检测", unit="张",
-                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}') as pbar:
+                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', mininterval=0, miniters=1) as pbar:
             # 检测生肉文本
             raw_detector = ComicTextDetector(
                 img_dir=str(self.raw_dir),
@@ -257,7 +257,7 @@ class MangaTransFerPipeline:
             pbar.update(1)
 
         with tqdm(total=total_raw, desc="文本匹配", unit="张",
-                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}') as pbar:
+                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', mininterval=0, miniters=1) as pbar:
             success = match_and_create_masks(
                 raw_annotations_path=str(raw_annotations),
                 text_annotations_path=str(text_annotations),
@@ -288,7 +288,7 @@ class MangaTransFerPipeline:
             pbar.update(1)
 
         with tqdm(total=total_images, desc="坐标调整", unit="张",
-                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}') as pbar:
+                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', mininterval=0, miniters=1) as pbar:
             adjuster = CoordinateAdjuster(
                 match_results_path=str(match_results_path),
                 text_dir=str(text_dir),
@@ -308,7 +308,7 @@ class MangaTransFerPipeline:
             pbar.update(1)
 
         with tqdm(total=total, desc="文本提取", unit="张",
-                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}') as pbar:
+                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', mininterval=0, miniters=1) as pbar:
             extract_text_from_masks(
                 input_dir=str(self.text_dir),
                 mask_dir=str(directories['text_mask']),
@@ -330,7 +330,7 @@ class MangaTransFerPipeline:
             pbar.update(1)
 
         with tqdm(total=total, desc="图像修复", unit="张",
-                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}') as pbar:
+                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', mininterval=0, miniters=1) as pbar:
             inpainted_count = inpaint_raw_images(
                 raw_img_dir=str(self.raw_dir),
                 new_mask_dir=str(directories['new_mask']),
@@ -356,7 +356,7 @@ class MangaTransFerPipeline:
             pbar.update(1)
 
         with tqdm(total=total_pages, desc="文本移植", unit="张",
-                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}') as pbar:
+                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', mininterval=0, miniters=1) as pbar:
             success = apply_text_to_inpainted_step(
                 json_path=str(match_output_path),
                 raw_dir=str(self.raw_dir),

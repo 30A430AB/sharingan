@@ -6,6 +6,7 @@ import multiprocessing
 import atexit
 import hashlib
 import io
+import os
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -298,7 +299,7 @@ def get_project_data(directory: str, pages: Dict[str, Any], current_img: str) ->
     }
 
 # ==================== UI 页面定义 ====================
-ui.page_title('MangaTransFer')
+ui.page_title('漫画翻译移植')
 app.add_static_files('/static', 'static')
 
 current_algorithm = InpaintAlgorithm.PATCHMATCH
@@ -1039,8 +1040,8 @@ async def get_working_image(request: Request):
 # ==================== 启动应用 ====================
 ui.run(
     title='MangaTransFer',
-    host='127.0.0.1',
-    port=8090,
+    host=os.environ.get('GUI_HOST', '127.0.0.1'),
+    port=int(os.environ.get('GUI_PORT', '8080')),
     dark=False,
     reload=False,
     language='zh-CN',

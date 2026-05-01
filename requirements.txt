@@ -1,7 +1,6 @@
 loguru==0.7.2
 natsort==8.4.0
 nicegui==3.9.0
-numpy==1.23.5
 opencv_python==4.10.0.84
 Pillow==12.1.1
 pooch==1.9.0
@@ -13,3 +12,4 @@ simple_lama_inpainting==0.1.0
 tqdm==4.67.3
 torch==2.11.0
 torchvision==0.26.0
+numpy==1.23.5

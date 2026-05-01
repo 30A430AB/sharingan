@@ -1,5 +1,4 @@
 import sys
-import pooch
 from pathlib import Path
 
 import torch
@@ -16,7 +15,7 @@ class classproperty:
         self.fget = fget
     def __get__(self, instance, owner):
         return self.fget(owner)
-    
+
 class DirPaths:
     TEMP = "temp"
     TEXT = "temp/text"
@@ -34,17 +33,14 @@ class DataPaths:
 
     @classproperty
     def COMIC_TEXT_DETECTOR(cls):
-        # 1. 有 CUDA 时直接用 PyTorch 模型
+        # 有 CUDA 时直接用 PyTorch 模型
         if torch.cuda.is_available():
             return ResourceManager.get_file("models/comictextdetector.pt")
-        
-        # 2. 纯 CPU 时优先尝试 ONNX
-        onnx_path = ResourceManager.get_file("models/comictextdetector.pt.onnx")
-        if onnx_path is not None:
-            return onnx_path
-        
-        # 3. ONNX 不可用时回退到 PyTorch（CPU）
-        return ResourceManager.get_file("models/comictextdetector.pt")
+        # 纯 CPU 优先尝试 ONNX，缺失则回退到 PyTorch
+        try:
+            return ResourceManager.get_file("models/comictextdetector.pt.onnx")
+        except FileNotFoundError:
+            return ResourceManager.get_file("models/comictextdetector.pt")
 
     @classproperty
     def RESNET18(cls):
@@ -72,7 +68,7 @@ class InpaintAlgorithm:
 
 class ResourceManager:
     BASE_URL = "https://github.com/30A430AB/MangaTransFer/releases/download/v0.1.0/"
-    
+
     # 本地相对路径 (相对于 data/) -> (远程文件名, SHA-256)
     FILES = {
         "models/comictextdetector.pt": ("comictextdetector.pt", "1f90fa60aeeb1eb82e2ac1167a66bf139a8a61b8780acd351ead55268540cccb"),
@@ -86,34 +82,18 @@ class ResourceManager:
 
     @classmethod
     def get_file(cls, local_rel_path: str):
-        """按需获取资源文件，首次下载时校验哈希，后续仅检查存在性"""
+        """获取资源文件的本地路径，文件不存在则抛出 FileNotFoundError"""
         if not cls._is_needed(local_rel_path):
             return None
 
         data_root = Path(__file__).parent.parent / "data"
         local_path = data_root / local_rel_path
 
-        # 如果文件已存在，直接返回（不校验哈希）
-        if local_path.exists():
-            return local_path
+        if not local_path.exists():
+            raise FileNotFoundError(f"资源文件缺失: {local_rel_path}")
 
-        # 文件不存在，使用 pooch 下载（下载时会自动校验哈希）
-        pup = pooch.create(
-            path=data_root,
-            base_url=cls.BASE_URL,
-            version=None,
-        )
-        def get_url(key):
-            return cls.BASE_URL + Path(key).name
-        pup.get_url = get_url
+        return local_path
 
-        if local_rel_path not in pup.registry:
-            remote_filename, file_hash = cls.FILES[local_rel_path]
-            pup.registry[local_rel_path] = file_hash
-
-        fetched_path = pup.fetch(local_rel_path)  # 下载并校验
-        return Path(fetched_path)
-    
     @staticmethod
     def _is_needed(local_rel_path):
         if ".so" in local_rel_path and not sys.platform.startswith('linux'):

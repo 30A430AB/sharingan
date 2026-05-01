@@ -2,41 +2,25 @@
 
 带露折花，色香自然要好得多；昔时不能够，今以朝花夕拾，终可为之。
 
-![screenshot](screenshot.png)
+![screenshot](docs/images/screenshot.webp)
 <p align="center">界面预览</p>
 
 ## 快速开始
 
 ### 环境要求
-- Python 3.10.6
+- Python 3.10.6 [下载](https://www.python.org/downloads/release/python-3106/)
 
 ### 下载
-1. 克隆仓库
-  ```bash
+```bash
 git clone https://github.com/30A430AB/MangaTransFer.git&&cd MangaTransFer
 ```
 
-2. 安装依赖
+### 运行
 ```bash
-pip install -r requirements.txt
+python launcher.py
 ```
-## 使用
-
-### 命令行模式
-```bash
-python cli.py <原始图片文件夹路径> <文本图片文件夹路径> [--automatch {true,false}]
-```
-
-|  参数   | 必填  |  默认   | 描述  |
-|  ----  | ----  |  ----  | ----  |
-| raw_dir  | 是 | 无  | 原始图片目录路径 |
-| text_dir  | 是 | 无  | 文本图片目录路径 |
-| --automatch  | 否 | true  | 是否自动匹配图片。若为 false，则要求两边图片文件名必须一致 |
-
-### GUI 模式
-```bash
-python gui.py
-```
+初次运行需点击配置页安装依赖和下载资源
+![launcher](docs/images/launcher.webp)
 
 #### 工具说明
 - 修复画笔：按下鼠标左键拖动抹除文字

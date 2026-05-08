@@ -71,8 +71,23 @@ window.selectProjectFile = function() {
                 // 初始化状态
                 window.projectDirectory = data.directory;
                 window.currentImg = data.current_img;
-                window.projectPages = JSON.parse(JSON.stringify(data.pages));
-                window.initialProjectPages = JSON.parse(JSON.stringify(data.pages)); // 深拷贝作为只读初始数据
+                
+                const rawPages = data.pages || {};
+                window.projectPages = {};
+                for (const [k, v] of Object.entries(rawPages)) {
+                    if (Array.isArray(v)) {
+                        // 兼容旧格式（纯数组）
+                        window.projectPages[k] = v;
+                    } else if (v && typeof v === 'object') {
+                        // 新格式：将 { entries: [...], textBoxes: [...] } 转为带属性的数组
+                        const arr = v.entries || [];
+                        arr.textBoxes = v.textBoxes || [];
+                        window.projectPages[k] = arr;
+                    } else {
+                        window.projectPages[k] = [];
+                    }
+                }
+                window.initialProjectPages = JSON.parse(JSON.stringify(window.projectPages));
 
                 if (data.imageUrl) {
                     window.canvasControls.loadLayers(data.imageUrl, data.inpaintedImageUrl, data.textBlocks);
@@ -153,7 +168,13 @@ function loadImage(key, directory) {
     
     // 重置当前工作数据为该页的初始数据（丢弃未保存的修改）
     if (window.projectPages && key) {
-        window.projectPages[key] = JSON.parse(JSON.stringify(initialEntries));
+        const clonedEntries = JSON.parse(JSON.stringify(initialEntries));
+        // ========== 兼容保留挂在数组上的 textBoxes 属性 ==========
+        if (initialEntries.textBoxes) {
+            clonedEntries.textBoxes = JSON.parse(JSON.stringify(initialEntries.textBoxes));
+        }
+
+        window.projectPages[key] = clonedEntries;
     }
 
     fetch('/get_image', {
@@ -315,9 +336,24 @@ window.saveProject = function() {
     const key = window.currentImg;
     const entries = window.projectPages[key];
 
+    // ========== 持久化用户添加的文本框数据 ==========
+    if (window.canvasControls?.getUserTextBoxes) {
+        window.projectPages[key].textBoxes = window.canvasControls.getUserTextBoxes();
+    }
+    
+    // 将 projectPages 转换为标准对象格式，防止 JSON.stringify 丢失数组上的自定义属性
+    const pagesToSave = {};
+    for (const k in window.projectPages) {
+        const pageArr = window.projectPages[k];
+        pagesToSave[k] = {
+            entries: pageArr,
+            textBoxes: pageArr.textBoxes || []
+        };
+    }
+
     const jsonPayload = {
         directory: directory,
-        pages: window.projectPages,
+        pages: pagesToSave,
         current_img: key
     };
 
@@ -360,7 +396,6 @@ async function saveImages(directory, key, entries) {
         imgWidth = info.width;
         imgHeight = info.height;
     }
-
     if (imageToSave) {
         const offCanvas = document.createElement('canvas');
         offCanvas.width = imgWidth;
@@ -384,15 +419,27 @@ async function saveImages(directory, key, entries) {
         }
     }
 
-    const resultPayload = {
-        directory: directory,
-        key: key,
-        entries: entries
-    };
+    // ========== 获取用户文本图层图片 ==========
+    let textLayerBlob = null;
+    if (window.canvasControls?.getTextLayerImage) {
+        const textLayerDataURL = await window.canvasControls.getTextLayerImage();
+        if (textLayerDataURL) {
+            textLayerBlob = dataURItoBlob(textLayerDataURL);
+        }
+    }
+
+    // ========== 保存结果图（包含文本图层） ==========
+    const formData = new FormData();
+    formData.append('directory', directory);
+    formData.append('key', key);
+    formData.append('entries', JSON.stringify(entries));
+    if (textLayerBlob) {
+        formData.append('text_layer', textLayerBlob, 'text_layer.png');
+    }
+
     const resResponse = await fetch('/save_result', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(resultPayload)
+        body: formData
     });
     const resResult = await resResponse.json();
     if (!resResult.success) {

@@ -79,6 +79,26 @@ function isMaskBlank(canvas) {
     return true;
 }
 
+// ==================== 文本框空内容自动删除 ====================
+function bindTextBoxRemoveOnEmpty(textBox) {
+    textBox.on('editing:exited', function() {
+        // 检查文本内容是否为空（去除空白字符后）
+        if (!textBox.text || textBox.text.trim() === '') {
+            // 从画布中移除
+            CanvasState.canvas.remove(textBox);
+            // 从 userTextBoxes 数组中移除
+            if (CanvasState.userTextBoxes) {
+                const index = CanvasState.userTextBoxes.indexOf(textBox);
+                if (index > -1) {
+                    CanvasState.userTextBoxes.splice(index, 1);
+                }
+            }
+            CanvasState.canvas.renderAll();
+            window.showToast && window.showToast('已删除空文本框', 'info');
+        }
+    });
+}
+
 // ==================== 画布初始化 ====================
 function initCanvas() {
     CanvasState.canvasContainer = document.getElementById('canvas-container');
@@ -886,6 +906,52 @@ function loadLayers(originalUrl, inpaintedUrl, textBlocks) {
                 }
             });
             CanvasState.textImages.forEach(img => img.set('opacity', CanvasState.currentTextLayerOpacity / 100));
+            
+            // ========== 恢复用户手动添加的文本框 ==========
+            if (CanvasState.userTextBoxes) {
+                CanvasState.userTextBoxes.forEach(tb => CanvasState.canvas.remove(tb));
+                CanvasState.userTextBoxes = [];
+            }
+            if (window.projectPages && window.currentImg) {
+                const pageData = window.projectPages[window.currentImg];
+                const textBoxesData = pageData ? pageData.textBoxes : null;
+                if (textBoxesData && Array.isArray(textBoxesData)) {
+                    textBoxesData.forEach(data => {
+                        const textBox = new fabric.Textbox(data.text || '', {
+                            left: data.left || 200,
+                            top: data.top || 200,
+                            width: data.width || 180,
+                            fontSize: data.fontSize || 28,
+                            fontFamily: data.fontFamily || 'system-ui, "Segoe UI", Roboto, sans-serif',
+                            fill: data.fill || '#000000',
+                            fontWeight: data.fontWeight || 'normal',
+                            fontStyle: data.fontStyle || 'normal',
+                            charSpacing: data.charSpacing !== undefined ? data.charSpacing : 0,
+                            lineHeight: data.lineHeight || 1.0,
+                            angle: data.angle || 0,
+                            editable: true,
+                            hasControls: true,
+                            lockScalingFlip: true,
+                            splitByGrapheme: true,
+                        });
+                        textBox.setControlsVisibility({
+                            mt: false, mb: false, ml: true, mr: true,
+                            tl: false, tr: false, bl: false, br: false, mtr: true
+                        });
+                        CanvasState.canvas.add(textBox);
+                        if (!CanvasState.userTextBoxes) {
+                            CanvasState.userTextBoxes = [];
+                        }
+                        if (data._verticalMode) {
+                            textBox._verticalMode = true;
+                            textBox._originalVerticalText = data._originalVerticalText;
+                        }
+                        CanvasState.userTextBoxes.push(textBox);
+                        // 绑定空内容自动删除事件
+                        bindTextBoxRemoveOnEmpty(textBox);
+                    });
+                }
+            }
 
             if (CanvasState.workingReferenceImage) {
                 CanvasState.workingReferenceImage.set({ left: -CanvasState.imageWidth, top: 0 });
@@ -1113,6 +1179,70 @@ window.canvasControls = {
         CanvasState.canvas.requestRenderAll();
     },
 
+    // ========== 获取用户文本框数据用于保存 ==========
+    getUserTextBoxes: function() {
+        return (CanvasState.userTextBoxes || []).map(tb => ({
+            text: tb.text,
+            left: tb.left,
+            top: tb.top,
+            width: tb.width,
+            fontSize: tb.fontSize,
+            fontFamily: tb.fontFamily,
+            fill: tb.fill,
+            fontWeight: tb.fontWeight,
+            fontStyle: tb.fontStyle,
+            charSpacing: tb.charSpacing,
+            lineHeight: tb.lineHeight,
+            angle: tb.angle || 0,
+            _verticalMode: tb._verticalMode || false,
+            _originalVerticalText: tb._originalVerticalText || null,
+        }));
+    },
+
+    // ========== 导出文本图层为透明背景图片 ==========
+    getTextLayerImage: function() {
+        if (!CanvasState.userTextBoxes || CanvasState.userTextBoxes.length === 0) {
+            return Promise.resolve(null);
+        }
+
+        return new Promise((resolve) => {
+            const textCanvas = new fabric.StaticCanvas(null, {
+                width: CanvasState.imageWidth,
+                height: CanvasState.imageHeight,
+                backgroundColor: null
+            });
+
+            let pending = CanvasState.userTextBoxes.length;
+
+            if (pending === 0) {
+                textCanvas.dispose();
+                resolve(null);
+                return;
+            }
+
+            CanvasState.userTextBoxes.forEach(textBox => {
+                textBox.clone(function(cloned) {
+                    cloned.set({
+                        selectable: false,
+                        evented: false,
+                        hasControls: false,
+                        hasBorders: false
+                    });
+                    textCanvas.add(cloned);
+                    pending--;
+                    if (pending === 0) {
+                        textCanvas.renderAll();
+                        const dataURL = textCanvas.toDataURL({
+                            format: 'png',
+                        });
+                        textCanvas.dispose();
+                        resolve(dataURL);
+                    }
+                });
+            });
+        });
+    },
+
     toggleWorkingReference: toggleWorkingReference,
     loadWorkingReference: loadWorkingReference,
     removeWorkingReference: function() {
@@ -1135,7 +1265,7 @@ window.canvasControls = {
         }
         return null;
     },
-    // 添加文本框（参照HTML示例）
+    // 添加文本框
     insertTextBlock: function() {
         // 检查画布与原图是否已加载
         if (!CanvasState.canvas) {
@@ -1178,11 +1308,13 @@ window.canvasControls = {
         // 刷新画布
         CanvasState.canvas.renderAll();
 
-        // 可选：将文本框对象存入独立数组，便于后续管理（如批量删除、样式统一修改等）
+        // 将文本框对象存入独立数组，便于后续管理（如批量删除、样式统一修改等）
         if (!CanvasState.userTextBoxes) {
             CanvasState.userTextBoxes = [];
         }
         CanvasState.userTextBoxes.push(textBox);
+        
+        bindTextBoxRemoveOnEmpty(textBox);
     },
     
 };
@@ -1974,6 +2106,77 @@ window.setLetterSpacing = function() {
 
     cancelBtn.addEventListener('click', () => closePanel(true));
     applyBtn.addEventListener('click', () => closePanel(false));
+};
+
+// ==================== 竖排/横排切换（保留样式） ====================
+window.setTextDirectionVertical = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+
+    // 如果当前已是竖排模式，恢复横排
+    if (activeObj._verticalMode) {
+        const originalText = activeObj._originalVerticalText;
+        if (originalText !== undefined) {
+            activeObj.set({ text: originalText });
+            delete activeObj._verticalMode;
+            delete activeObj._originalVerticalText;
+            CanvasState.canvas.renderAll();
+            window.showToast && window.showToast('已恢复横排', 'info');
+        }
+        return;
+    }
+
+    // 进入竖排模式：保存原始文本（仅文本，不保存样式）
+    const originalText = activeObj.text;
+    activeObj._verticalMode = true;
+    activeObj._originalVerticalText = originalText;
+
+    // 将横排文本转为竖排矩阵
+    const lines = originalText.split('\n');
+    const charLines = [];
+    let maxCols = 0;
+    for (let i = 0; i < lines.length; i++) {
+        const chars = Array.from(lines[i]); // 正确处理 Unicode 字符
+        charLines.push(chars);
+        if (chars.length > maxCols) maxCols = chars.length;
+    }
+
+    const rows = charLines.length;
+    const matrix = [];
+    for (let r = 0; r < rows; r++) {
+        const row = charLines[r].slice();
+        while (row.length < maxCols) {
+            row.push('\u3000'); // 全角空格
+        }
+        matrix.push(row);
+    }
+
+    // 矩阵转置
+    const newRows = maxCols;
+    const newCols = rows;
+    const transposed = [];
+    for (let nr = 0; nr < newRows; nr++) {
+        const newRow = [];
+        for (let nc = 0; nc < newCols; nc++) {
+            newRow.push(matrix[nc][nr]);
+        }
+        transposed.push(newRow);
+    }
+
+    // 构建竖排文本：每行字符反转（从右到左阅读），列间用空格分隔
+    const separator = ' ';
+    const newLines = transposed.map(row => row.reverse().join(separator));
+    const newText = newLines.join('\n');
+
+    // 应用竖排文本（保留现有的 charSpacing, lineHeight 等样式）
+    activeObj.set({ text: newText, width: 0, height: 0 }); // 自动计算尺寸
+    activeObj.initDimensions();
+
+    CanvasState.canvas.renderAll();
+    window.showToast && window.showToast('已转为竖排', 'info');
 };
 
 // 启动

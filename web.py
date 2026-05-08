@@ -208,8 +208,8 @@ def mount_static_directory(directory: Path, prefix: str) -> str:
 def get_project_data(directory: str, pages: Dict[str, Any], current_img: str) -> Dict[str, Any]:
     """获取项目数据，供前端加载"""
     directory_path = Path(directory)
-    current_img_stem = Path(current_img).stem  # 强制去除可能存在的扩展名
-
+    current_img_stem = Path(current_img).stem # 强制去除可能存在的扩展名
+    
     # 查找原始图片
     img_filename = None
     for ext in IMAGE_EXTS:
@@ -217,13 +217,14 @@ def get_project_data(directory: str, pages: Dict[str, Any], current_img: str) ->
         if potential.exists():
             img_filename = potential.name
             break
+            
     if not img_filename:
         raise Exception(f'Image not found for {current_img_stem} in {directory}')
-
+        
     # 挂载原始图片目录
     raw_mount = mount_static_directory(directory_path, 'raw')
     image_url = f"{raw_mount}/{img_filename}"
-
+    
     # 挂载 inpainted 目录
     inpainted_dir = directory_path / 'inpainted'
     inpainted_dir.mkdir(parents=True, exist_ok=True)
@@ -235,12 +236,11 @@ def get_project_data(directory: str, pages: Dict[str, Any], current_img: str) ->
             mtime = int(potential.stat().st_mtime)
             inpainted_url = f"{inpainted_mount}/{current_img_stem}{ext}?t={mtime}"
             break
-
+            
     # 处理缩略图（异步生成缺失的缩略图）
     thumb_dir = directory_path / DirPaths.THUMBS
     thumb_dir.mkdir(parents=True, exist_ok=True)
     thumb_mount = mount_static_directory(thumb_dir, 'thumbs')
-
     thumbnails = []
     for key in pages.keys():
         # 查找原始图片路径
@@ -252,11 +252,11 @@ def get_project_data(directory: str, pages: Dict[str, Any], current_img: str) ->
                 break
         if not raw_path:
             continue
-
+            
         thumb_filename = f"thumb_raw_{key}.jpg"
         thumb_path = thumb_dir / thumb_filename
         thumb_url = f"{thumb_mount}/{thumb_filename}"
-
+        
         if not thumb_path.exists():
             # 异步生成缩略图，避免阻塞
             async def generate_thumb(path: Path, thumb: Path, url: str):
@@ -283,16 +283,25 @@ def get_project_data(directory: str, pages: Dict[str, Any], current_img: str) ->
                 except Exception as e:
                     logger.error(f"生成缩略图失败 {key}: {e}")
             asyncio.create_task(generate_thumb(raw_path, thumb_path, thumb_url))
-
+            
         thumbnails.append({'key': key, 'thumb_url': thumb_url})
 
-    text_blocks = generate_text_blocks(directory, current_img_stem, pages.get(current_img_stem, []))
+    # ========== 修改点：兼容新格式的 entries 提取 ==========
+    page_data = pages.get(current_img_stem, [])
+    if isinstance(page_data, dict):
+        current_entries = page_data.get('entries', [])
+    else:
+        current_entries = page_data
+    # ========== 修改点结束 ==========
+
+    text_blocks = generate_text_blocks(directory, current_img_stem, current_entries)
+    
     return {
         'directory': str(directory_path),
         'imageUrl': image_url,
         'inpaintedImageUrl': inpainted_url,
         'pages': pages,
-        'regions': pages.get(current_img_stem, []),
+        'regions': current_entries,
         'thumbnails': thumbnails,
         'textBlocks': text_blocks,
         'current_img': current_img_stem
@@ -637,7 +646,7 @@ with ui.element('div').classes('fixed top-0 left-0 w-full h-full').style('margin
                             with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setLetterSpacing()')):
                                 ui.html(f'<img src="{SVG_ICONS["format_letter_spacing_2"]}" style="width:24px;height:24px;">')
                             # 竖排
-                            with ui.button(color='transparent').props('flat dense').on('click', lambda: ui.run_javascript('window.setTextDirectionVertical()')):
+                            with ui.button(color='transparent').props('flat dense id="vertical-text-btn"').on('click', lambda: ui.run_javascript('window.setTextDirectionVertical()')):
                                 ui.html(f'<img src="{SVG_ICONS["format_textdirection_on_vertical"]}" style="width:24px;height:24px;">')
                                   
             with ui.element('div').classes('bg-white').style('height:40px; flex-shrink:0; margin:0; padding:0; width:100%; display:flex; align-items:center; border-top:1px solid #E0E0E0; box-sizing:border-box;').props('name="zoom-bar"'):
@@ -978,12 +987,17 @@ async def save_inpainted(request: Request):
 @app.post('/save_result')
 async def save_result(request: Request):
     try:
-        data = await request.json()
-        directory = data.get('directory')
-        key = data.get('key')
-        entries = data.get('entries')
+        form = await request.form()
+        directory = form.get('directory')
+        key = form.get('key')
+        entries_str = form.get('entries')
+        text_layer_file = form.get('text_layer')
+
+        entries = json.loads(entries_str) if entries_str else []
+
         if directory is None or key is None or entries is None:
             return {'error': '缺少参数'}
+
         directory_path = Path(directory)
         key_stem = Path(key).stem
 
@@ -1006,6 +1020,7 @@ async def save_result(request: Request):
 
         base_img = Image.open(base_path).convert('RGBA')
 
+        # 合成匹配的文本块
         text_dir = directory_path / 'temp' / 'text'
         text_img_path = None
         for ext in IMAGE_EXTS:
@@ -1013,7 +1028,6 @@ async def save_result(request: Request):
             if p.exists():
                 text_img_path = p
                 break
-
         if text_img_path:
             text_img = Image.open(text_img_path).convert('RGBA')
             for entry in entries:
@@ -1034,10 +1048,20 @@ async def save_result(request: Request):
                     block = block.resize((target_w, target_h), Image.Resampling.LANCZOS)
                 base_img.paste(block, (left, top), block)
 
+        # ========== 合成用户文本图层 ==========
+        if text_layer_file:
+            text_layer_bytes = await text_layer_file.read()
+            text_layer_img = Image.open(io.BytesIO(text_layer_bytes)).convert('RGBA')
+            # 确保尺寸匹配
+            if text_layer_img.size != base_img.size:
+                text_layer_img = text_layer_img.resize(base_img.size, Image.Resampling.LANCZOS)
+            base_img = Image.alpha_composite(base_img, text_layer_img)
+
         result_dir = directory_path / 'result'
         result_dir.mkdir(parents=True, exist_ok=True)
         result_path = result_dir / f"{key_stem}.png"
         base_img.save(result_path, 'PNG')
+
         return {'success': True, 'path': str(result_path)}
     except Exception as e:
         logger.exception(f"保存结果失败: {e}")

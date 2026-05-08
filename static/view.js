@@ -71,8 +71,21 @@ window.selectProjectFile = function() {
                 // 初始化状态
                 window.projectDirectory = data.directory;
                 window.currentImg = data.current_img;
-                window.projectPages = JSON.parse(JSON.stringify(data.pages));
-                window.initialProjectPages = JSON.parse(JSON.stringify(data.pages)); // 深拷贝作为只读初始数据
+                
+                const rawPages = data.pages || {};
+                window.projectPages = {};
+                for (const [k, v] of Object.entries(rawPages)) {
+                    if (Array.isArray(v)) {
+                        // 兼容旧格式（纯数组），转为统一对象格式
+                        window.projectPages[k] = { entries: v, textBoxes: [] };
+                    } else if (v && typeof v === 'object') {
+                        // 新格式直接保留
+                        window.projectPages[k] = { entries: v.entries || [], textBoxes: v.textBoxes || [] };
+                    } else {
+                        window.projectPages[k] = { entries: [], textBoxes: [] };
+                    }
+                }
+                window.initialProjectPages = JSON.parse(JSON.stringify(window.projectPages));
 
                 if (data.imageUrl) {
                     window.canvasControls.loadLayers(data.imageUrl, data.inpaintedImageUrl, data.textBlocks);
@@ -149,11 +162,12 @@ function loadImage(key, directory) {
     }
 
     // 从初始只读数据中获取该页的条目（真正的原始数据）
-    const initialEntries = window.initialProjectPages ? window.initialProjectPages[key] : [];
+    const initialPageData = window.initialProjectPages ? window.initialProjectPages[key] : null;
+    const initialEntries = initialPageData ? initialPageData.entries : [];
     
     // 重置当前工作数据为该页的初始数据（丢弃未保存的修改）
     if (window.projectPages && key) {
-        window.projectPages[key] = JSON.parse(JSON.stringify(initialEntries));
+        window.projectPages[key] = JSON.parse(JSON.stringify(initialPageData || { entries: [], textBoxes: [] }));
     }
 
     fetch('/get_image', {
@@ -202,8 +216,9 @@ function updateTextBlocks(textBlocks, pageKey) {
     textBlocks.forEach((block, index) => {
         // 从当前工作数据中获取可见性状态（优先）
         let currentVisible = block.visible;
-        if (window.projectPages?.[pageKey]?.[index]) {
-            const entry = window.projectPages[pageKey][index];
+        const pageEntries = window.projectPages?.[pageKey]?.entries;
+        if (pageEntries && pageEntries[index]) {
+            const entry = pageEntries[index];
             currentVisible = (entry.matched === 1);
         }
 
@@ -237,8 +252,9 @@ function updateTextBlocks(textBlocks, pageKey) {
                 window.canvasControls.setTextBlockVisibility(index, newVisible);
             }
             // 立即同步到工作数据
-            if (window.projectPages?.[pageKey]?.[index]) {
-                window.projectPages[pageKey][index].matched = newVisible ? 1 : 0;
+            const syncEntries = window.projectPages?.[pageKey]?.entries;
+            if (syncEntries && syncEntries[index]) {
+                syncEntries[index].matched = newVisible ? 1 : 0;
             }
         });
 
@@ -313,13 +329,15 @@ window.saveProject = function() {
 
     const directory = window.projectDirectory;
     const key = window.currentImg;
-    const entries = window.projectPages[key];
+    const pageData = window.projectPages[key];
+    const entries = pageData.entries;
+    // ========== 持久化用户添加的文本框数据 ==========
+    if (window.canvasControls?.getUserTextBoxes) {
+        pageData.textBoxes = window.canvasControls.getUserTextBoxes();
+    }
+    // 数据结构已经是统一对象，直接序列化，不再需要转换
+    const jsonPayload = { directory: directory, pages: window.projectPages, current_img: key };
 
-    const jsonPayload = {
-        directory: directory,
-        pages: window.projectPages,
-        current_img: key
-    };
 
     fetch('/save_project', {
         method: 'POST',
@@ -360,7 +378,6 @@ async function saveImages(directory, key, entries) {
         imgWidth = info.width;
         imgHeight = info.height;
     }
-
     if (imageToSave) {
         const offCanvas = document.createElement('canvas');
         offCanvas.width = imgWidth;
@@ -384,15 +401,27 @@ async function saveImages(directory, key, entries) {
         }
     }
 
-    const resultPayload = {
-        directory: directory,
-        key: key,
-        entries: entries
-    };
+    // ========== 获取用户文本图层图片 ==========
+    let textLayerBlob = null;
+    if (window.canvasControls?.getTextLayerImage) {
+        const textLayerDataURL = await window.canvasControls.getTextLayerImage();
+        if (textLayerDataURL) {
+            textLayerBlob = dataURItoBlob(textLayerDataURL);
+        }
+    }
+
+    // ========== 保存结果图（包含文本图层） ==========
+    const formData = new FormData();
+    formData.append('directory', directory);
+    formData.append('key', key);
+    formData.append('entries', JSON.stringify(entries));
+    if (textLayerBlob) {
+        formData.append('text_layer', textLayerBlob, 'text_layer.png');
+    }
+
     const resResponse = await fetch('/save_result', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(resultPayload)
+        body: formData
     });
     const resResult = await resResponse.json();
     if (!resResult.success) {

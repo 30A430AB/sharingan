@@ -79,6 +79,26 @@ function isMaskBlank(canvas) {
     return true;
 }
 
+// ==================== 文本框空内容自动删除 ====================
+function bindTextBoxRemoveOnEmpty(textBox) {
+    textBox.on('editing:exited', function() {
+        // 检查文本内容是否为空（去除空白字符后）
+        if (!textBox.text || textBox.text.trim() === '') {
+            // 从画布中移除
+            CanvasState.canvas.remove(textBox);
+            // 从 userTextBoxes 数组中移除
+            if (CanvasState.userTextBoxes) {
+                const index = CanvasState.userTextBoxes.indexOf(textBox);
+                if (index > -1) {
+                    CanvasState.userTextBoxes.splice(index, 1);
+                }
+            }
+            CanvasState.canvas.renderAll();
+            window.showToast && window.showToast('已删除空文本框', 'info');
+        }
+    });
+}
+
 // ==================== 画布初始化 ====================
 function initCanvas() {
     CanvasState.canvasContainer = document.getElementById('canvas-container');
@@ -103,7 +123,7 @@ function initCanvas() {
     
     CanvasState.canvas.on('mouse:wheel', onMouseWheel);
     
-    bindCanvasEvents();
+    bindCanvasEvents();    // 禁用文本框缩放时改变字体大小（保持字体大小固定）
     switchTool('drag');
     window.currentAlgorithm = window.ALGO_PATCHMATCH;
 }
@@ -351,6 +371,14 @@ function onCanvasMouseDown(opt) {
             evt.preventDefault();
             return;
         }
+    }
+
+    // 如果点击到可交互的 fabric 对象（如用户添加的文本框），则不启动画布拖拽
+    if (opt.target && 
+        opt.target !== CanvasState.comicImage && 
+        opt.target !== CanvasState.inpaintedImage && 
+        opt.target !== CanvasState.workingReferenceImage) {
+        return;
     }
 
     if (CanvasState.currentTool === 'drag' && CanvasState.currentScale > CanvasState.minScale) {
@@ -878,6 +906,52 @@ function loadLayers(originalUrl, inpaintedUrl, textBlocks) {
                 }
             });
             CanvasState.textImages.forEach(img => img.set('opacity', CanvasState.currentTextLayerOpacity / 100));
+            
+            // ========== 恢复用户手动添加的文本框 ==========
+            if (CanvasState.userTextBoxes) {
+                CanvasState.userTextBoxes.forEach(tb => CanvasState.canvas.remove(tb));
+                CanvasState.userTextBoxes = [];
+            }
+            if (window.projectPages && window.currentImg) {
+                const pageData = window.projectPages[window.currentImg];
+                const textBoxesData = pageData ? pageData.textBoxes : null;
+                if (textBoxesData && Array.isArray(textBoxesData)) {
+                    textBoxesData.forEach(data => {
+                        const textBox = new fabric.Textbox(data.text || '', {
+                            left: data.left || 200,
+                            top: data.top || 200,
+                            width: data.width || 180,
+                            fontSize: data.fontSize || 28,
+                            fontFamily: data.fontFamily || 'system-ui, "Segoe UI", Roboto, sans-serif',
+                            fill: data.fill || '#000000',
+                            fontWeight: data.fontWeight || 'normal',
+                            fontStyle: data.fontStyle || 'normal',
+                            charSpacing: data.charSpacing !== undefined ? data.charSpacing : 0,
+                            lineHeight: data.lineHeight || 1.0,
+                            angle: data.angle || 0,
+                            editable: true,
+                            hasControls: true,
+                            lockScalingFlip: true,
+                            splitByGrapheme: true,
+                        });
+                        textBox.setControlsVisibility({
+                            mt: false, mb: false, ml: true, mr: true,
+                            tl: false, tr: false, bl: false, br: false, mtr: true
+                        });
+                        CanvasState.canvas.add(textBox);
+                        if (!CanvasState.userTextBoxes) {
+                            CanvasState.userTextBoxes = [];
+                        }
+                        if (data._verticalMode) {
+                            textBox._verticalMode = true;
+                            textBox._originalVerticalText = data._originalVerticalText;
+                        }
+                        CanvasState.userTextBoxes.push(textBox);
+                        // 绑定空内容自动删除事件
+                        bindTextBoxRemoveOnEmpty(textBox);
+                    });
+                }
+            }
 
             if (CanvasState.workingReferenceImage) {
                 CanvasState.workingReferenceImage.set({ left: -CanvasState.imageWidth, top: 0 });
@@ -1079,7 +1153,8 @@ window.canvasControls = {
 
     updateCurrentPageData: function() {
         if (!window.projectPages || !window.currentImg || !CanvasState.textImages) return;
-        const entries = window.projectPages[window.currentImg];
+        const pageData = window.projectPages[window.currentImg];
+        const entries = pageData ? pageData.entries : null;
         if (!entries || entries.length !== CanvasState.textImages.length) {
             console.warn('页面条目数量不匹配，无法保存');
             return;
@@ -1105,6 +1180,70 @@ window.canvasControls = {
         CanvasState.canvas.requestRenderAll();
     },
 
+    // ========== 获取用户文本框数据用于保存 ==========
+    getUserTextBoxes: function() {
+        return (CanvasState.userTextBoxes || []).map(tb => ({
+            text: tb.text,
+            left: tb.left,
+            top: tb.top,
+            width: tb.width,
+            fontSize: tb.fontSize,
+            fontFamily: tb.fontFamily,
+            fill: tb.fill,
+            fontWeight: tb.fontWeight,
+            fontStyle: tb.fontStyle,
+            charSpacing: tb.charSpacing,
+            lineHeight: tb.lineHeight,
+            angle: tb.angle || 0,
+            _verticalMode: tb._verticalMode || false,
+            _originalVerticalText: tb._originalVerticalText || null,
+        }));
+    },
+
+    // ========== 导出文本图层为透明背景图片 ==========
+    getTextLayerImage: function() {
+        if (!CanvasState.userTextBoxes || CanvasState.userTextBoxes.length === 0) {
+            return Promise.resolve(null);
+        }
+
+        return new Promise((resolve) => {
+            const textCanvas = new fabric.StaticCanvas(null, {
+                width: CanvasState.imageWidth,
+                height: CanvasState.imageHeight,
+                backgroundColor: null
+            });
+
+            let pending = CanvasState.userTextBoxes.length;
+
+            if (pending === 0) {
+                textCanvas.dispose();
+                resolve(null);
+                return;
+            }
+
+            CanvasState.userTextBoxes.forEach(textBox => {
+                textBox.clone(function(cloned) {
+                    cloned.set({
+                        selectable: false,
+                        evented: false,
+                        hasControls: false,
+                        hasBorders: false
+                    });
+                    textCanvas.add(cloned);
+                    pending--;
+                    if (pending === 0) {
+                        textCanvas.renderAll();
+                        const dataURL = textCanvas.toDataURL({
+                            format: 'png',
+                        });
+                        textCanvas.dispose();
+                        resolve(dataURL);
+                    }
+                });
+            });
+        });
+    },
+
     toggleWorkingReference: toggleWorkingReference,
     loadWorkingReference: loadWorkingReference,
     removeWorkingReference: function() {
@@ -1126,8 +1265,922 @@ window.canvasControls = {
             return { image: CanvasState.comicImage, width: CanvasState.imageWidth, height: CanvasState.imageHeight };
         }
         return null;
+    },
+    // 添加文本框
+    insertTextBlock: function() {
+        // 检查画布与原图是否已加载
+        if (!CanvasState.canvas) {
+            window.showToast && window.showToast('画布未初始化', 'error');
+            return;
+        }
+        if (!CanvasState.comicImage) {
+            window.showToast && window.showToast('请先加载图片', 'error');
+            return;
+        }
+
+        // 创建文本框
+        const textBox = new fabric.Textbox('新文本', {
+            left: 200,                // 初始水平位置
+            top: 200,                 // 初始垂直位置
+            fontSize: 28,
+            fontFamily: 'system-ui, "Segoe UI", Roboto, sans-serif',
+            fill: '#000000',          // 文字颜色
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            underline: false,
+            editable: true,           // 允许双击编辑
+            hasControls: true,        // 显示控制点
+            lockScalingFlip: true,
+            width: 180,               // 初始宽度，支持自动换行
+            splitByGrapheme: true,    // 支持 emoji 等复杂字符
+        });
+
+        // 只保留旋转和左右控制柄
+        textBox.setControlsVisibility({
+            mt: false, mb: false, ml: true, mr: true,
+            tl: false, tr: false, bl: false, br: false,
+            mtr: true
+        });
+
+        // 将文本框添加到画布
+        CanvasState.canvas.add(textBox);
+        // 设置为当前选中对象
+        CanvasState.canvas.setActiveObject(textBox);
+        // 刷新画布
+        CanvasState.canvas.renderAll();
+
+        // 将文本框对象存入独立数组，便于后续管理（如批量删除、样式统一修改等）
+        if (!CanvasState.userTextBoxes) {
+            CanvasState.userTextBoxes = [];
+        }
+        CanvasState.userTextBoxes.push(textBox);
+        
+        bindTextBoxRemoveOnEmpty(textBox);
+    },
+    
+};
+
+// ==================== 字体选择功能 ====================
+window.selectFontFamily = function() {
+    // 移除已有的字体面板
+    const existingPanel = document.getElementById('font-family-panel');
+    if (existingPanel) {
+        existingPanel.remove();
+        return;
+    }
+
+    // 获取当前选中的文本对象
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+
+    // 创建浮动面板
+    const panel = document.createElement('div');
+    panel.id = 'font-family-panel';
+
+    // 定位：出现在右侧按钮栏左侧
+    const rightBar = document.getElementById('right-button-bar');
+    if (rightBar) {
+        const rect = rightBar.getBoundingClientRect();
+        panel.style.right = (window.innerWidth - rect.left + 5) + 'px';
+        panel.style.top = Math.max(10, rect.top) + 'px';
+    } else {
+        panel.style.right = '50px';
+        panel.style.top = '100px';
+    }
+
+    panel.style.position = 'fixed';
+    panel.style.width = '220px';
+    panel.style.maxHeight = '400px';
+    panel.style.overflowY = 'auto';
+    panel.style.background = 'white';
+    panel.style.border = '1px solid #E0E0E0';
+    panel.style.borderRadius = '8px';
+    panel.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+    panel.style.zIndex = '10000';
+    panel.style.padding = '8px 0';
+
+    // 显示加载提示
+    panel.innerHTML = '<div style="padding: 12px 16px; color: #666; text-align: center;">加载字体列表中...</div>';
+    document.body.appendChild(panel);
+
+    // 辅助函数：渲染字体列表
+    const renderFontList = (fontFamilies) => {
+        panel.innerHTML = '';
+        if (!fontFamilies || fontFamilies.length === 0) {
+            panel.innerHTML = '<div style="padding: 12px 16px; color: #666; text-align: center;">未找到可用字体</div>';
+            return;
+        }
+
+        fontFamilies.forEach(font => {
+            const item = document.createElement('div');
+            item.textContent = font;
+            item.style.cssText = `
+                padding: 8px 16px;
+                cursor: pointer;
+                font-family: '${font}', system-ui;
+                font-size: 16px;
+                transition: background 0.2s;
+            `;
+            item.onmouseenter = () => item.style.backgroundColor = '#f0f2f5';
+            item.onmouseleave = () => item.style.backgroundColor = '';
+            item.onclick = () => {
+                activeObj.set('fontFamily', font);
+                CanvasState.canvas.renderAll();
+                panel.remove();
+            };
+            panel.appendChild(item);
+        });
+    };
+
+    // 回退字体列表（兼顾 Windows 和银河麒麟）
+    const fallbackFonts = [
+        // 基础通用字体
+        'Arial', 'Helvetica', 'sans-serif',
+        'Times New Roman', 'Georgia', 'serif',
+        'Courier New', 'monospace',
+        'system-ui', 'Segoe UI', 'Roboto',
+        // 常见中文字体
+        'Microsoft YaHei', 'SimHei', 'PingFang SC',
+        'SimSun', 'FangSong', 'KaiTi',
+    ];
+
+    // 尝试使用现代 API 获取系统字体
+    if (window.queryLocalFonts) {
+        window.queryLocalFonts().then(fonts => {
+            // 按 postscriptName 去重，避免同一字体族的多个变体重复
+            const fontMap = new Map();
+            fonts.forEach(font => fontMap.set(font.postscriptName, font));
+            const uniqueFonts = Array.from(fontMap.values());
+
+            // 提取字体族名称，去重并排序
+            const fontFamilies = [...new Set(uniqueFonts.map(font => font.family))]
+                .filter(name => name && typeof name === 'string')
+                .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+
+            renderFontList(fontFamilies);
+        }).catch(err => {
+            console.warn('获取本地字体失败，使用回退列表:', err);
+            renderFontList(fallbackFonts);
+        });
+    } else {
+        // 浏览器不支持，直接使用回退列表
+        renderFontList(fallbackFonts);
+    }
+
+    // 点击外部关闭面板
+    const closeHandler = (e) => {
+        if (!panel.contains(e.target) && e.target.closest('#font-family-panel') === null) {
+            panel.remove();
+            document.removeEventListener('click', closeHandler);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+};
+
+// ==================== 字号调整功能 ====================
+window.increaseFontSize = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+    const currentSize = activeObj.fontSize || 24;
+    const newSize = Math.min(currentSize + 2, 200); // 每次增加2px，上限200px
+    activeObj.set('fontSize', newSize);
+    CanvasState.canvas.renderAll();
+    
+    // 将px换算为pt (1pt ≈ 1.333px)
+    const sizeInPt = (newSize * 0.75).toFixed(1);
+    window.showToast && window.showToast(`字号: ${sizeInPt} pt`, 'info');
+};
+
+window.decreaseFontSize = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+    const currentSize = activeObj.fontSize || 24;
+    const newSize = Math.max(currentSize - 2, 8); // 每次减小2px，下限8px
+    activeObj.set('fontSize', newSize);
+    CanvasState.canvas.renderAll();
+    
+    const sizeInPt = (newSize * 0.75).toFixed(1);
+    window.showToast && window.showToast(`字号: ${sizeInPt} pt`, 'info');
+};
+
+// ==================== 加粗 / 斜体功能 ====================
+window.toggleFontBold = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+    // 判断当前是否为粗体
+    const isBold = activeObj.fontWeight === 'bold' || activeObj.fontWeight >= 600;
+    activeObj.set('fontWeight', isBold ? 'normal' : 'bold');
+    CanvasState.canvas.renderAll();
+};
+
+window.toggleItalic = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+    // 判断当前是否为斜体
+    const isItalic = activeObj.fontStyle === 'italic';
+    activeObj.set('fontStyle', isItalic ? 'normal' : 'italic');
+    CanvasState.canvas.renderAll();
+};
+
+// ==================== 字体颜色选择 ====================
+window.chooseTextColor = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+
+    // 移除已有面板
+    const existingPanel = document.getElementById('color-picker-panel');
+    if (existingPanel) {
+        existingPanel.remove();
+        return;
+    }
+
+    // 创建悬浮面板
+    const panel = document.createElement('div');
+    panel.id = 'color-picker-panel';
+    panel.style.cssText = `
+        position: fixed;
+        width: 280px;
+        background: white;
+        border: 1px solid #E0E0E0;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        padding: 12px;
+        box-sizing: border-box;
+        user-select: none;
+    `;
+
+    // 定位到右侧按钮栏左侧
+    const rightBar = document.getElementById('right-button-bar');
+    if (rightBar) {
+        const rect = rightBar.getBoundingClientRect();
+        panel.style.right = (window.innerWidth - rect.left + 10) + 'px';
+        panel.style.top = Math.max(10, rect.top) + 'px';
+    } else {
+        panel.style.right = '50px';
+        panel.style.top = '100px';
+    }
+
+    // 当前颜色
+    let currentColor = activeObj.fill || '#000000';
+    // 转换为HSV便于处理
+    let hsv = hexToHsv(currentColor);
+
+    // 创建饱和度/明度画布
+    const svCanvas = document.createElement('canvas');
+    svCanvas.width = 200;
+    svCanvas.height = 200;
+    svCanvas.style.cssText = `
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 4px;
+        cursor: crosshair;
+        margin-bottom: 8px;
+    `;
+    const svCtx = svCanvas.getContext('2d');
+
+    // 创建色相滑块画布
+    const hueCanvas = document.createElement('canvas');
+    hueCanvas.width = 200;
+    hueCanvas.height = 20;
+    hueCanvas.style.cssText = `
+        display: block;
+        width: 100%;
+        height: 20px;
+        border-radius: 4px;
+        cursor: ew-resize;
+        margin-bottom: 12px;
+    `;
+    const hueCtx = hueCanvas.getContext('2d');
+
+    // 预览区域行（取色器 + 预览色块）
+    const previewRow = document.createElement('div');
+    previewRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+    `;
+
+    // 取色器按钮（吸管）
+    const eyedropperBtn = document.createElement('button');
+    eyedropperBtn.innerHTML = '<span class="material-icons" style="font-size:20px;">colorize</span>';
+    eyedropperBtn.title = '从屏幕取色';
+    eyedropperBtn.style.cssText = `
+        width: 36px;
+        height: 36px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        flex-shrink: 0;
+    `;
+    // 如果浏览器不支持 EyeDropper，则禁用按钮
+    if (!window.EyeDropper) {
+        eyedropperBtn.disabled = true;
+        eyedropperBtn.style.opacity = '0.5';
+        eyedropperBtn.style.cursor = 'not-allowed';
+        eyedropperBtn.title = '当前浏览器不支持取色器';
+    }
+
+    // 预览色块
+    const preview = document.createElement('div');
+    preview.style.cssText = `
+        flex: 1;
+        height: 36px;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+    `;
+
+    previewRow.appendChild(eyedropperBtn);
+    previewRow.appendChild(preview);
+
+    // 颜色值输入
+    const hexInput = document.createElement('input');
+    hexInput.type = 'text';
+    hexInput.value = currentColor;
+    hexInput.style.cssText = `
+        width: 100%;
+        padding: 6px 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin-bottom: 12px;
+        box-sizing: border-box;
+    `;
+
+    // 按钮
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = `
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    `;
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '取消';
+    cancelBtn.style.cssText = `padding:6px 12px;border:1px solid #ddd;background:white;border-radius:4px;cursor:pointer;`;
+    const applyBtn = document.createElement('button');
+    applyBtn.textContent = '应用';
+    applyBtn.style.cssText = `padding:6px 12px;border:none;background:#1976D2;color:white;border-radius:4px;cursor:pointer;`;
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(applyBtn);
+
+    panel.appendChild(svCanvas);
+    panel.appendChild(hueCanvas);
+    panel.appendChild(previewRow);
+    panel.appendChild(hexInput);
+    panel.appendChild(btnRow);
+    document.body.appendChild(panel);
+
+    // 绘制函数
+    function drawSVPanel(h) {
+        const width = svCanvas.width;
+        const height = svCanvas.height;
+        const imageData = svCtx.createImageData(width, height);
+        const data = imageData.data;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const s = x / width;
+                const v = 1 - y / height;
+                const rgb = hsvToRgb(h, s, v);
+                const idx = (y * width + x) * 4;
+                data[idx] = rgb[0];
+                data[idx+1] = rgb[1];
+                data[idx+2] = rgb[2];
+                data[idx+3] = 255;
+            }
+        }
+        svCtx.putImageData(imageData, 0, 0);
+
+        // 绘制指示圆点
+        const dotX = hsv.s * width;
+        const dotY = (1 - hsv.v) * height;
+        svCtx.beginPath();
+        svCtx.arc(dotX, dotY, 5, 0, 2 * Math.PI);
+        svCtx.strokeStyle = '#fff';
+        svCtx.lineWidth = 2;
+        svCtx.stroke();
+        svCtx.shadowColor = '#000';
+        svCtx.shadowBlur = 4;
+        svCtx.stroke();
+        svCtx.shadowColor = 'transparent';
+    }
+
+    function drawHueBar() {
+        const width = hueCanvas.width;
+        const height = hueCanvas.height;
+        const gradient = hueCtx.createLinearGradient(0, 0, width, 0);
+        for (let i = 0; i <= 360; i+=1) {
+            gradient.addColorStop(i/360, `hsl(${i}, 100%, 50%)`);
+        }
+        hueCtx.fillStyle = gradient;
+        hueCtx.fillRect(0, 0, width, height);
+        // 绘制指示器
+        const indicatorX = (hsv.h / 360) * width;
+        hueCtx.beginPath();
+        hueCtx.moveTo(indicatorX, 0);
+        hueCtx.lineTo(indicatorX, height);
+        hueCtx.strokeStyle = '#fff';
+        hueCtx.lineWidth = 2;
+        hueCtx.stroke();
+    }
+
+    function updatePreviewAndInput() {
+        const rgb = hsvToRgb(hsv.h, hsv.s, hsv.v);
+        const hex = rgbToHex(rgb[0], rgb[1], rgb[2]);
+        preview.style.backgroundColor = hex;
+        hexInput.value = hex;
+        // 实时应用到文本框
+        activeObj.set('fill', hex);
+        CanvasState.canvas.renderAll();
+    }
+
+    function setColorFromHex(hex) {
+        const hsvNew = hexToHsv(hex);
+        hsv.h = hsvNew.h;
+        hsv.s = hsvNew.s;
+        hsv.v = hsvNew.v;
+        drawSVPanel(hsv.h);
+        drawHueBar();
+        updatePreviewAndInput();
+    }
+
+    // 初始化绘制
+    drawSVPanel(hsv.h);
+    drawHueBar();
+    updatePreviewAndInput();
+
+    // 事件处理
+    let isDraggingSV = false;
+    let isDraggingHue = false;
+
+    function handleSVMove(clientX, clientY) {
+        const rect = svCanvas.getBoundingClientRect();
+        const scaleX = svCanvas.width / rect.width;
+        const scaleY = svCanvas.height / rect.height;
+        let x = (clientX - rect.left) * scaleX;
+        let y = (clientY - rect.top) * scaleY;
+        x = Math.max(0, Math.min(svCanvas.width, x));
+        y = Math.max(0, Math.min(svCanvas.height, y));
+        hsv.s = x / svCanvas.width;
+        hsv.v = 1 - y / svCanvas.height;
+        drawSVPanel(hsv.h);
+        updatePreviewAndInput();
+    }
+
+    function handleHueMove(clientX) {
+        const rect = hueCanvas.getBoundingClientRect();
+        const scaleX = hueCanvas.width / rect.width;
+        let x = (clientX - rect.left) * scaleX;
+        x = Math.max(0, Math.min(hueCanvas.width, x));
+        hsv.h = (x / hueCanvas.width) * 360;
+        drawSVPanel(hsv.h);
+        drawHueBar();
+        updatePreviewAndInput();
+    }
+
+    svCanvas.addEventListener('mousedown', (e) => {
+        isDraggingSV = true;
+        handleSVMove(e.clientX, e.clientY);
+        e.preventDefault();
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (isDraggingSV) {
+            handleSVMove(e.clientX, e.clientY);
+            e.preventDefault();
+        } else if (isDraggingHue) {
+            handleHueMove(e.clientX);
+            e.preventDefault();
+        }
+    });
+    window.addEventListener('mouseup', () => {
+        isDraggingSV = false;
+        isDraggingHue = false;
+    });
+
+    hueCanvas.addEventListener('mousedown', (e) => {
+        isDraggingHue = true;
+        handleHueMove(e.clientX);
+        e.preventDefault();
+    });
+
+    hexInput.addEventListener('change', () => {
+        try {
+            const hex = hexInput.value.trim();
+            if (/^#[0-9A-F]{6}$/i.test(hex)) {
+                setColorFromHex(hex);
+            }
+        } catch (e) {}
+    });
+
+    // 取色器功能
+    eyedropperBtn.addEventListener('click', async () => {
+        if (!window.EyeDropper) {
+            window.showToast && window.showToast('当前浏览器不支持取色器', 'warning');
+            return;
+        }
+        try {
+            const eyeDropper = new EyeDropper();
+            const result = await eyeDropper.open();
+            setColorFromHex(result.sRGBHex);
+        } catch (e) {
+            // 用户取消操作，不做处理
+        }
+    });
+
+    // 关闭面板并清理事件
+    function closePanel(restoreColor = true) {
+        if (restoreColor) {
+            // 恢复原始颜色
+            activeObj.set('fill', currentColor);
+            CanvasState.canvas.renderAll();
+        }
+        panel.remove();
+        cleanup();
+    }
+
+    function cleanup() {
+        window.removeEventListener('mousemove', handleSVMove);
+        window.removeEventListener('mouseup', cleanup);
+    }
+
+    cancelBtn.addEventListener('click', () => {
+        closePanel(true);
+    });
+
+    applyBtn.addEventListener('click', () => {
+        closePanel(false);
+    });
+
+    // 辅助函数：HSV与RGB转换
+    function hsvToRgb(h, s, v) {
+        h = h % 360 / 360;
+        let r, g, b;
+        const i = Math.floor(h * 6);
+        const f = h * 6 - i;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+        switch (i % 6) {
+            case 0: r = v; g = t; b = p; break;
+            case 1: r = q; g = v; b = p; break;
+            case 2: r = p; g = v; b = t; break;
+            case 3: r = p; g = q; b = v; break;
+            case 4: r = t; g = p; b = v; break;
+            case 5: r = v; g = p; b = q; break;
+        }
+        return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+    }
+
+    function rgbToHex(r, g, b) {
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+    }
+
+    function hexToHsv(hex) {
+        let r, g, b;
+        if (hex.length === 7) {
+            r = parseInt(hex.slice(1,3), 16) / 255;
+            g = parseInt(hex.slice(3,5), 16) / 255;
+            b = parseInt(hex.slice(5,7), 16) / 255;
+        } else {
+            r = g = b = 0;
+        }
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const d = max - min;
+        let h = 0;
+        const s = max === 0 ? 0 : d / max;
+        const v = max;
+        if (max !== min) {
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+        return { h: h * 360, s, v };
     }
 };
 
+// ==================== 行距调节功能 ====================
+window.setLineSpacing = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+
+    // 移除已有面板
+    const existingPanel = document.getElementById('line-spacing-panel');
+    if (existingPanel) {
+        existingPanel.remove();
+        return;
+    }
+
+    // 创建浮动面板
+    const panel = document.createElement('div');
+    panel.id = 'line-spacing-panel';
+    panel.style.cssText = `
+        position: fixed;
+        width: 260px;
+        background: white;
+        border: 1px solid #E0E0E0;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        padding: 16px;
+        box-sizing: border-box;
+        user-select: none;
+    `;
+
+    // 定位到右侧按钮栏左侧
+    const rightBar = document.getElementById('right-button-bar');
+    if (rightBar) {
+        const rect = rightBar.getBoundingClientRect();
+        panel.style.right = (window.innerWidth - rect.left + 10) + 'px';
+        panel.style.top = Math.max(10, rect.top) + 'px';
+    } else {
+        panel.style.right = '50px';
+        panel.style.top = '100px';
+    }
+
+    // 当前行距值（默认为 1.0）
+    const currentLineHeight = activeObj.lineHeight || 1.0;
+
+    // 创建说明标签
+    const label = document.createElement('div');
+    label.textContent = '行距倍数';
+    label.style.cssText = 'font-size: 14px; color: #333; margin-bottom: 12px;';
+
+    // 滑块容器
+    const sliderContainer = document.createElement('div');
+    sliderContainer.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-bottom: 20px;';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0.5';
+    slider.max = '3.0';
+    slider.step = '0.1';
+    slider.value = currentLineHeight;
+    slider.style.cssText = 'flex: 1;';
+
+    const valueDisplay = document.createElement('span');
+    valueDisplay.textContent = currentLineHeight.toFixed(1);
+    valueDisplay.style.cssText = 'min-width: 40px; text-align: right; font-size: 14px; color: #666;';
+
+    slider.addEventListener('input', () => {
+        const val = parseFloat(slider.value);
+        valueDisplay.textContent = val.toFixed(1);
+        activeObj.set('lineHeight', val);
+        CanvasState.canvas.renderAll();
+    });
+
+    sliderContainer.appendChild(slider);
+    sliderContainer.appendChild(valueDisplay);
+
+    // 按钮行
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = `
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    `;
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '取消';
+    cancelBtn.style.cssText = `padding:6px 12px;border:1px solid #ddd;background:white;border-radius:4px;cursor:pointer;`;
+    const applyBtn = document.createElement('button');
+    applyBtn.textContent = '应用';
+    applyBtn.style.cssText = `padding:6px 12px;border:none;background:#1976D2;color:white;border-radius:4px;cursor:pointer;`;
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(applyBtn);
+
+    panel.appendChild(label);
+    panel.appendChild(sliderContainer);
+    panel.appendChild(btnRow);
+    document.body.appendChild(panel);
+
+    // 关闭面板并清理
+    function closePanel(restore = true) {
+        if (restore) {
+            activeObj.set('lineHeight', currentLineHeight);
+            CanvasState.canvas.renderAll();
+        }
+        panel.remove();
+    }
+
+    cancelBtn.addEventListener('click', () => closePanel(true));
+    applyBtn.addEventListener('click', () => closePanel(false));
+};
+
+// ==================== 字间距调节功能 ====================
+window.setLetterSpacing = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+
+    // 移除已有面板
+    const existingPanel = document.getElementById('letter-spacing-panel');
+    if (existingPanel) {
+        existingPanel.remove();
+        return;
+    }
+
+    // 创建浮动面板
+    const panel = document.createElement('div');
+    panel.id = 'letter-spacing-panel';
+    panel.style.cssText = `
+        position: fixed;
+        width: 260px;
+        background: white;
+        border: 1px solid #E0E0E0;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        padding: 16px;
+        box-sizing: border-box;
+        user-select: none;
+    `;
+
+    // 定位到右侧按钮栏左侧
+    const rightBar = document.getElementById('right-button-bar');
+    if (rightBar) {
+        const rect = rightBar.getBoundingClientRect();
+        panel.style.right = (window.innerWidth - rect.left + 10) + 'px';
+        panel.style.top = Math.max(10, rect.top) + 'px';
+    } else {
+        panel.style.right = '50px';
+        panel.style.top = '100px';
+    }
+
+    // 当前字间距值
+    const currentCharSpacing = activeObj.charSpacing !== undefined ? activeObj.charSpacing : 0;
+
+    // 创建说明标签
+    const label = document.createElement('div');
+    label.textContent = '字间距';
+    label.style.cssText = 'font-size: 14px; color: #333; margin-bottom: 12px;';
+
+    // 滑块容器
+    const sliderContainer = document.createElement('div');
+    sliderContainer.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-bottom: 20px;';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '2000';
+    slider.step = '1';
+    slider.value = currentCharSpacing;
+    slider.style.cssText = 'flex: 1;';
+
+    const valueDisplay = document.createElement('span');
+    // 显示除以10后的值，保留一位小数
+    valueDisplay.textContent = (currentCharSpacing / 10).toFixed(1);
+    valueDisplay.style.cssText = 'min-width: 50px; text-align: right; font-size: 14px; color: #666;';
+
+    slider.addEventListener('input', () => {
+        const val = parseInt(slider.value);
+        valueDisplay.textContent = (val / 10).toFixed(1);
+        activeObj.set('charSpacing', val);
+        CanvasState.canvas.renderAll();
+    });
+
+    sliderContainer.appendChild(slider);
+    sliderContainer.appendChild(valueDisplay);
+
+    // 按钮行
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = `
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    `;
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '取消';
+    cancelBtn.style.cssText = `padding:6px 12px;border:1px solid #ddd;background:white;border-radius:4px;cursor:pointer;`;
+    const applyBtn = document.createElement('button');
+    applyBtn.textContent = '应用';
+    applyBtn.style.cssText = `padding:6px 12px;border:none;background:#1976D2;color:white;border-radius:4px;cursor:pointer;`;
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(applyBtn);
+
+    panel.appendChild(label);
+    panel.appendChild(sliderContainer);
+    panel.appendChild(btnRow);
+    document.body.appendChild(panel);
+
+    // 关闭面板并清理
+    function closePanel(restore = true) {
+        if (restore) {
+            activeObj.set('charSpacing', currentCharSpacing);
+            CanvasState.canvas.renderAll();
+        }
+        panel.remove();
+    }
+
+    cancelBtn.addEventListener('click', () => closePanel(true));
+    applyBtn.addEventListener('click', () => closePanel(false));
+};
+
+// ==================== 竖排/横排切换（保留样式） ====================
+window.setTextDirectionVertical = function() {
+    const activeObj = CanvasState.canvas.getActiveObject();
+    if (!activeObj || (activeObj.type !== 'textbox' && activeObj.type !== 'i-text' && activeObj.type !== 'text')) {
+        window.showToast && window.showToast('请先选中一个文本框', 'warning');
+        return;
+    }
+
+    // 如果当前已是竖排模式，恢复横排
+    if (activeObj._verticalMode) {
+        const originalText = activeObj._originalVerticalText;
+        if (originalText !== undefined) {
+            activeObj.set({ text: originalText });
+            delete activeObj._verticalMode;
+            delete activeObj._originalVerticalText;
+            CanvasState.canvas.renderAll();
+            window.showToast && window.showToast('已恢复横排', 'info');
+        }
+        return;
+    }
+
+    // 进入竖排模式：保存原始文本（仅文本，不保存样式）
+    const originalText = activeObj.text;
+    activeObj._verticalMode = true;
+    activeObj._originalVerticalText = originalText;
+
+    // 将横排文本转为竖排矩阵
+    const lines = originalText.split('\n');
+    const charLines = [];
+    let maxCols = 0;
+    for (let i = 0; i < lines.length; i++) {
+        const chars = Array.from(lines[i]); // 正确处理 Unicode 字符
+        charLines.push(chars);
+        if (chars.length > maxCols) maxCols = chars.length;
+    }
+
+    const rows = charLines.length;
+    const matrix = [];
+    for (let r = 0; r < rows; r++) {
+        const row = charLines[r].slice();
+        while (row.length < maxCols) {
+            row.push('\u3000'); // 全角空格
+        }
+        matrix.push(row);
+    }
+
+    // 矩阵转置
+    const newRows = maxCols;
+    const newCols = rows;
+    const transposed = [];
+    for (let nr = 0; nr < newRows; nr++) {
+        const newRow = [];
+        for (let nc = 0; nc < newCols; nc++) {
+            newRow.push(matrix[nc][nr]);
+        }
+        transposed.push(newRow);
+    }
+
+    // 构建竖排文本：每行字符反转（从右到左阅读），列间用空格分隔
+    const separator = ' ';
+    const newLines = transposed.map(row => row.reverse().join(separator));
+    const newText = newLines.join('\n');
+
+    // 应用竖排文本（保留现有的 charSpacing, lineHeight 等样式）
+    activeObj.set({ text: newText, width: 0, height: 0 }); // 自动计算尺寸
+    activeObj.initDimensions();
+
+    CanvasState.canvas.renderAll();
+    window.showToast && window.showToast('已转为竖排', 'info');
+};
+
 // 启动
-document.addEventListener('DOMContentLoaded', () => setTimeout(initCanvas, 100));
+document.addEventListener('DOMContentLoaded', () => {setTimeout(initCanvas, 100);
+});
+

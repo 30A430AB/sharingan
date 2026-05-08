@@ -14,16 +14,18 @@ import hashlib
 import urllib.request
 import importlib.util
 import re
+import platform
 from typing import Optional, Callable, Tuple, List, Dict, Any
 
 from core.config import ResourceManager
 
-try:
-    from tkinterdnd2 import DND_FILES, TkinterDnD
-    HAS_DND = True
-except ImportError:
-    HAS_DND = False
-
+HAS_DND = False
+if platform.system() == "Windows":
+    try:
+        from tkinterdnd2 import DND_FILES, TkinterDnD
+        HAS_DND = True
+    except ImportError:
+        pass
 
 # ── 日志格式化器 ──────────────────────────────────────
 class LogFormatter:
@@ -146,17 +148,15 @@ class LogPanel(ttk.Frame):
 
         # 布局：文本框
         self.text_widget = scrolledtext.ScrolledText(
-            self, height=text_height, state=tk.DISABLED, font=("Microsoft YaHei", 9),
-            wrap=tk.WORD, bg="#1e1e1e", fg="#d4d4d4", insertbackground="#d4d4d4",
+            self, height=text_height, state=tk.DISABLED,
+            wrap=tk.WORD, bg="white", fg="black", insertbackground="black",
             selectbackground="#264f78", borderwidth=0, highlightthickness=1,
-            highlightbackground="#444", padx=6, pady=4,
+            highlightbackground="#ccc", padx=6, pady=4,
         )
         self.text_widget.pack(fill=tk.BOTH, expand=True)
 
         # 配置 Tag 颜色
-        for tag, color in [("error", "#f44747"), ("success", "#6a9955"), 
-                           ("info", "#569cd6"), ("dim", "#808080"), 
-                           ("ok", "#6a9955"), ("missing", "#f44747")]:
+        for tag, color in [("error", "#cc0000"), ("success", "#228b22"), ("info", "#0066cc"), ("dim", "#999999"), ("ok", "#228b22"), ("missing", "#cc0000")]:
             self.text_widget.tag_configure(tag, foreground=color)
 
     def start_polling(self, root: tk.Tk, interval: int = 50):
@@ -218,7 +218,6 @@ class ResourceDownloader:
 
     @staticmethod
     def get_required_files() -> Dict[str, Tuple[str, str]]:
-        import platform
         is_windows, is_linux = platform.system() == "Windows", platform.system() == "Linux"
         files = {}
         for rel_path, (remote_name, sha256) in ResourceManager.FILES.items():
@@ -315,13 +314,11 @@ class App(tk.Tk if not HAS_DND else TkinterDnD.Tk):
         self.config_log.start_polling(self)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        if not HAS_DND:
-            self.after(100, lambda: self.cli_log.append("[提示] 未安装 tkinterdnd2，拖拽不可用\n[提示] pip install tkinterdnd2\n", "dim"))
 
     # ── 界面构建 ─────────────────────────
     def _build_ui(self):
         style = ttk.Style(self)
-        style.configure("Header.TLabel", font=("", 10, "bold"))
+        style.configure("Header.TLabel")
         style.configure("TNotebook.Tab", width=10, anchor='center')
 
         notebook = ttk.Notebook(self)
@@ -455,8 +452,8 @@ class App(tk.Tk if not HAS_DND else TkinterDnD.Tk):
         
         cli_path = Path(__file__).resolve().parent / "cli.py"
         if not cli_path.exists(): return self.cli_log.append(f"错误: 未找到 cli.py ({cli_path})", "error")
-
-        cmd = [sys.executable, str(cli_path), raw_dir, text_dir, "--automatch", str(self.automatch_var.get()).lower(), "--thumbnails"]
+        interpreter = self.python_entry.get().strip() or sys.executable
+        cmd = [interpreter, str(cli_path), raw_dir, text_dir, "--automatch", str(self.automatch_var.get()).lower(), "--thumbnails"]
         self.cli_log.append(f"命令: {' '.join(cmd)}", "dim")
         self.cli_log.append("\u2500" * 56)
         
@@ -496,7 +493,8 @@ class App(tk.Tk if not HAS_DND else TkinterDnD.Tk):
         # 修改环境变量并启动
         env_backup = os.environ.copy()
         os.environ["GUI_HOST"], os.environ["GUI_PORT"] = host, port
-        self.gui_runner.run([sys.executable, str(gui_path)], Path(__file__).resolve().parent)
+        interpreter = self.python_entry.get().strip() or sys.executable
+        self.gui_runner.run([interpreter, str(gui_path)], Path(__file__).resolve().parent)
         os.environ.clear(); os.environ.update(env_backup) # 恢复环境变量隔离
 
     def _stop_gui(self):
@@ -507,52 +505,74 @@ class App(tk.Tk if not HAS_DND else TkinterDnD.Tk):
     # ── 资源与依赖管理 ─────────────────────────────────
     def _check_resources(self):
         self.config_log.clear()
-        self.config_log.append("正在检查资源文件...\n")
+        self.config_log.append("正在检查资源文件...")
         dl = ResourceDownloader()
         data_root = ResourceDownloader.get_data_root()
         all_ok = True
         
         for rel_path, (remote_name, _) in dl.get_required_files().items():
             if (data_root / rel_path).exists():
-                self.config_log.append(f"{remote_name} ✔\n", "ok")
+                self.config_log.append(f"{remote_name} ✔", "ok")
             else:
                 all_ok = False
-                self.config_log.append(f"{remote_name} ❌\n", "missing")
+                self.config_log.append(f"{remote_name} ❌", "missing")
                 
         if all_ok:
-            self.config_log.append("\n所有资源文件已就绪\n", "success")
+            self.config_log.append("所有资源文件已就绪", "success")
         else:
-            self.config_log.append("\n存在缺失的资源文件，请点击“下载资源”按钮进行下载\n", "error")
+            self.config_log.append("存在缺失的资源文件，请点击“下载资源”按钮进行下载", "error")
 
 
     def _download_resources(self):
         dl = ResourceDownloader()
-        if not (missing := dl.scan_missing()): return self.config_log.append("所有资源文件已就绪\n", "success")
+        if not (missing := dl.scan_missing()): return self.config_log.append("所有资源文件已就绪", "success")
         self._show_download_dialog(missing, dl, exit_on_cancel=False, on_finish=self._check_resources)
 
     def _check_and_install_deps(self):
         req_path = Path(__file__).resolve().parent / "requirements.txt"
         python_path = self.python_entry.get().strip() or sys.executable
         self.config_log.clear()
-        self.config_log.append(f"Python 解释器: {python_path}\n正在检查依赖...\n")
-        if not req_path.exists(): return self.config_log.append("未找到 requirements.txt\n", "error")
-
-        missing_specs = []
+        self.config_log.append(f"Python 解释器: {python_path} 正在检查依赖...")
+        if not req_path.exists():
+            return self.config_log.append("未找到 requirements.txt", "error")
+        
+        # 1. 收集所有需要检查的模块
+        check_list = []
         for line in req_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if not line or line.startswith("#"): continue
+            if not line or line.startswith("#"):
+                continue
             if match := re.match(r'^([a-zA-Z0-9_-]+)', line):
                 pkg_name = match.group(1).lower()
                 import_name = self.PACKAGE_NAME_MAP.get(pkg_name, pkg_name.replace("-", "_"))
-                if importlib.util.find_spec(import_name) is None:
-                    missing_specs.append(line)
-                    self.config_log.append(f"缺失: {line}\n", "error")
+                check_list.append((line, import_name))
         
-        if not missing_specs: return self.config_log.append("所有依赖已安装\n", "success")
+        if not check_list:
+            return self.config_log.append("所有依赖已安装", "success")
+
+        # 2. 生成一次性检查脚本（只启动一次进程）
+        script_lines = [f"try:\n    import {name}\nexcept ImportError:\n    print('MISSING:{name}')" for _, name in check_list]
+        check_script = "\n".join(script_lines)
+        
+        result = subprocess.run(
+            [python_path, "-c", check_script],
+            capture_output=True, text=True
+        )
+        
+        # 3. 解析结果
+        missing_specs = []
+        missing_names = set(result.stdout.strip().splitlines())
+        for line, import_name in check_list:
+            if f"MISSING:{import_name}" in missing_names:
+                missing_specs.append(line)
+                self.config_log.append(f"缺失: {line}", "error")
+                
+        if not missing_specs:
+            return self.config_log.append("所有依赖已安装", "success")
         
         mirror_url = self.MIRRORS.get(self.mirror_combo.get(), "")
-        self.config_log.append(f"\n开始安装 {len(missing_specs)} 个依赖库...\n")
-        if mirror_url: self.config_log.append(f"使用镜像源: {self.mirror_combo.get()}\n", "info")
+        self.config_log.append(f"开始安装 {len(missing_specs)} 个依赖库...")
+        if mirror_url: self.config_log.append(f"使用镜像源: {self.mirror_combo.get()}", "info")
         
         self.check_dep_btn.configure(state=tk.DISABLED)
         def run_install():
@@ -563,8 +583,8 @@ class App(tk.Tk if not HAS_DND else TkinterDnD.Tk):
                 for line in iter(p.stdout.readline, ''): 
                     if line.strip(): self.after(0, lambda l=line: self.config_log.append(l))
                 p.wait()
-                self.after(0, lambda: self.config_log.append("依赖安装完成\n" if p.returncode == 0 else f"安装失败，退出码: {p.returncode}\n", "success" if p.returncode == 0 else "error"))
-            except Exception as e: self.after(0, lambda: self.config_log.append(f"错误: {e}\n", "error"))
+                self.after(0, lambda: self.config_log.append("依赖安装完成" if p.returncode == 0 else f"安装失败，退出码: {p.returncode}", "success" if p.returncode == 0 else "error"))
+            except Exception as e: self.after(0, lambda: self.config_log.append(f"错误: {e}", "error"))
             finally: self.after(0, lambda: self.check_dep_btn.configure(state=tk.NORMAL))
         threading.Thread(target=run_install, daemon=True).start()
 
@@ -594,7 +614,8 @@ class App(tk.Tk if not HAS_DND else TkinterDnD.Tk):
                 downloader.download_all(missing_files)
                 self.after(0, dlg.destroy)
                 self.after(0, lambda: tk.messagebox.showinfo("完成", "资源下载完成"))
-            except Exception as exc: self.after(0, lambda: self._handle_dl_failure(exc, missing_files, downloader, exit_on_cancel, on_finish))
+            except Exception as exc: 
+                self.after(0, lambda exc=exc: self._handle_dl_failure(exc, ...))
             finally:
                 if on_finish: self.after(0, on_finish)
         threading.Thread(target=task, daemon=True).start()

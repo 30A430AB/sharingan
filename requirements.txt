@@ -13,3 +13,4 @@ tqdm==4.67.3
 torch==2.11.0
 torchvision==0.26.0
 numpy==1.23.5
+tkinterdnd2==0.4.3

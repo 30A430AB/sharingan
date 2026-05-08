@@ -6,6 +6,7 @@ import multiprocessing
 import atexit
 import hashlib
 import io
+import os
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -298,7 +299,7 @@ def get_project_data(directory: str, pages: Dict[str, Any], current_img: str) ->
     }
 
 # ==================== UI 页面定义 ====================
-ui.page_title('MangaTransFer')
+ui.page_title('漫画翻译移植')
 app.add_static_files('/static', 'static')
 
 current_algorithm = InpaintAlgorithm.PATCHMATCH
@@ -344,12 +345,23 @@ def show_new_project_dialog():
                 ui.button('浏览', on_click=pick_text).props('flat dense').classes('h-9 px-3')
             with ui.row().classes('w-full justify-center gap-4 mt-4'):
                 async def on_start():
-                    raw_dir = raw_input.value.strip()
-                    text_dir = text_input.value.strip()
-                    if not raw_dir or not text_dir:
+                    # 原始输入去掉首尾空格
+                    raw_val = raw_input.value.strip()
+                    text_val = text_input.value.strip()
+                    if not raw_val or not text_val:
                         ui.notify('请填写原图和文本图片目录路径', type='warning', position='top')
                         return
-                    match_model_path = str(DataPaths.RESNET18)
+
+                    # ★ 强制转换为正斜杠路径 ★
+                    raw_dir = Path(raw_val).as_posix()
+                    text_dir = Path(text_val).as_posix()
+
+                    # 模型路径同样处理
+                    resnet_path = DataPaths.RESNET18
+                    if resnet_path is None:
+                        ui.notify('ResNet 模型文件缺失', type='negative', position='top')
+                        return
+                    match_model_path = Path(resnet_path).as_posix()
                     if not Path(match_model_path).exists():
                         ui.notify(f'匹配模型不存在: {match_model_path}', type='negative', position='top')
                         return
@@ -411,8 +423,20 @@ async def show_match_result_panel(matches, raw_dir, text_dir):
         for match in batch:
             raw_thumb_name = Path(match.get('raw_thumbnail_path', '')).name
             text_thumb_name = Path(match.get('text_thumbnail_path', '')).name
-            raw_thumb_url = f'/thumbs/{raw_thumb_name}' if raw_thumb_name else None
-            text_thumb_url = f'/thumbs/{text_thumb_name}' if text_thumb_name else None
+            
+            raw_thumb_url = None
+            if raw_thumb_name:
+                raw_thumb_path = thumb_dir / raw_thumb_name
+                if raw_thumb_path.exists():
+                    t = int(raw_thumb_path.stat().st_mtime)
+                    raw_thumb_url = f'/thumbs/{raw_thumb_name}?t={t}'
+
+            text_thumb_url = None
+            if text_thumb_name:
+                text_thumb_path = thumb_dir / text_thumb_name
+                if text_thumb_path.exists():
+                    t = int(text_thumb_path.stat().st_mtime)
+                    text_thumb_url = f'/thumbs/{text_thumb_name}?t={t}'
 
             raw_path = match['raw_path']
             original_text_path = match['text_path']
@@ -444,7 +468,8 @@ async def show_match_result_panel(matches, raw_dir, text_dir):
                         ui.label(f'{sim:.4f}').classes(f'text-lg font-bold {color}')
         await asyncio.sleep(0)
     try:
-        await ui.run_javascript(f'window.initMatchResultPanel("{text_dir}", "{thumb_dir}");')
+        thumb_dir = Path(raw_dir) / DirPaths.THUMBS
+        await ui.run_javascript(f'window.initMatchResultPanel("{text_dir}", "{thumb_dir.as_posix()}");')
     except TimeoutError:
         # 前端可能未及时响应，但脚本通常已成功执行
         pass
@@ -1053,8 +1078,8 @@ async def get_working_image(request: Request):
 # ==================== 启动应用 ====================
 ui.run(
     title='MangaTransFer',
-    host='127.0.0.1',
-    port=8080,
+    host=os.environ.get('GUI_HOST', '127.0.0.1'),
+    port=int(os.environ.get('GUI_PORT', '8080')),
     dark=False,
     reload=False,
     language='zh-CN',

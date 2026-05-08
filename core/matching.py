@@ -427,12 +427,25 @@ def match_images(raw_dir: str,
     Returns:
         匹配结果列表，每个元素为字典
     """
+    for name, val in [('raw_dir', raw_dir), ('text_dir', text_dir), ('model_weights_path', model_weights_path)]:
+        if val is None:
+            raise ValueError(f"{name} 不能为 None")
+    
+    raw_dir = Path(raw_dir).as_posix()
+    text_dir = Path(text_dir).as_posix()
+    model_weights_path = Path(model_weights_path).as_posix()
+    if thumb_output_dir is not None:
+        thumb_output_dir = Path(thumb_output_dir).as_posix()
+    
+    if not Path(model_weights_path).exists():
+        raise FileNotFoundError(f"模型文件不存在: {model_weights_path}")
+
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
     device_obj = torch.device(device)
 
-    raw_images = [str(p) for p in get_image_files(Path(raw_dir))]
-    text_images = [str(p) for p in get_image_files(Path(text_dir))]
+    raw_images = [p.as_posix() for p in get_image_files(Path(raw_dir))]
+    text_images = [p.as_posix() for p in get_image_files(Path(text_dir))]
 
     if not raw_images or not text_images:
         raise ValueError("未找到任何图片文件。")
@@ -454,7 +467,7 @@ def match_images(raw_dir: str,
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
                 img.save(thumb_path, 'JPEG', quality=85)
-                return str(path), str(thumb_path)
+                return path.as_posix(), thumb_path.as_posix()
             except Exception as e:
                 logger.warning(f"生成缩略图失败 {path}: {e}")
                 return None
@@ -505,5 +518,13 @@ def match_images(raw_dir: str,
             match_item['text_thumbnail_path'] = text_thumb_map.get(text_path)
 
         matches.append(match_item)
+
+    for match_item in matches:
+        match_item['raw_path'] = Path(match_item['raw_path']).as_posix()
+        match_item['text_path'] = Path(match_item['text_path']).as_posix()
+        if 'raw_thumbnail_path' in match_item and match_item['raw_thumbnail_path']:
+            match_item['raw_thumbnail_path'] = Path(match_item['raw_thumbnail_path']).as_posix()
+        if 'text_thumbnail_path' in match_item and match_item['text_thumbnail_path']:
+            match_item['text_thumbnail_path'] = Path(match_item['text_thumbnail_path']).as_posix()
 
     return matches

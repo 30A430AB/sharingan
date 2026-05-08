@@ -93,7 +93,14 @@ class CoordinateAdjuster:
                         self.status_callback(processed, total)
                     continue
 
-                mask = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
+                try:
+                    # 以二进制方式读取文件，再用 cv2.imdecode 解码
+                    with open(mask_path, 'rb') as f:
+                        img_bytes  = np.frombuffer(f.read(), np.uint8)
+                    mask = cv2.imdecode(img_bytes , cv2.IMREAD_UNCHANGED)
+                except Exception as e:
+                    mask = None
+                    
                 if mask is None:
                     logger.error(f"无法读取 mask: {mask_path}")
                     processed += 1

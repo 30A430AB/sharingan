@@ -680,14 +680,18 @@ async function showImageSelector(row) {
         
         const promises = files.map(file => {
             const baseName = file.replace(/\.[^/.]+$/, '');
-            return getBestImageUrl(baseName, file).then(url => ({ file, url }));
+            return getBestImageUrl(baseName, file).then(url => ({ file, url, baseName }));
         });
         const results = await Promise.all(promises);
         
-        for (const { file, url } of results) {
+        for (const { file, url, baseName } of results) {
             const div = document.createElement('div');
             div.style.cssText = 'cursor:pointer; text-align:center; padding:4px; border:1px solid #ddd; border-radius:4px;';
-            div.innerHTML = `<img src="${url}" style="width:100%; height:auto; max-height:100px; object-fit:contain;" onerror="this.src='${url}'" />`;
+            // ★ 新增文件名显示，显示为 baseName.jpg
+            div.innerHTML = `
+                <img src="${url}" style="width:100%; height:auto; max-height:100px; object-fit:contain;" onerror="this.src='${url}'" />
+                <div style="font-size:12px; margin-top:4px; word-break:break-all;">${baseName}.jpg</div>
+            `;
             div.onclick = () => {
                 grid.querySelectorAll('.thumb-selected').forEach(el => {
                     el.classList.remove('thumb-selected');

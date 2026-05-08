@@ -76,15 +76,13 @@ window.selectProjectFile = function() {
                 window.projectPages = {};
                 for (const [k, v] of Object.entries(rawPages)) {
                     if (Array.isArray(v)) {
-                        // 兼容旧格式（纯数组）
-                        window.projectPages[k] = v;
+                        // 兼容旧格式（纯数组），转为统一对象格式
+                        window.projectPages[k] = { entries: v, textBoxes: [] };
                     } else if (v && typeof v === 'object') {
-                        // 新格式：将 { entries: [...], textBoxes: [...] } 转为带属性的数组
-                        const arr = v.entries || [];
-                        arr.textBoxes = v.textBoxes || [];
-                        window.projectPages[k] = arr;
+                        // 新格式直接保留
+                        window.projectPages[k] = { entries: v.entries || [], textBoxes: v.textBoxes || [] };
                     } else {
-                        window.projectPages[k] = [];
+                        window.projectPages[k] = { entries: [], textBoxes: [] };
                     }
                 }
                 window.initialProjectPages = JSON.parse(JSON.stringify(window.projectPages));
@@ -164,17 +162,12 @@ function loadImage(key, directory) {
     }
 
     // 从初始只读数据中获取该页的条目（真正的原始数据）
-    const initialEntries = window.initialProjectPages ? window.initialProjectPages[key] : [];
+    const initialPageData = window.initialProjectPages ? window.initialProjectPages[key] : null;
+    const initialEntries = initialPageData ? initialPageData.entries : [];
     
     // 重置当前工作数据为该页的初始数据（丢弃未保存的修改）
     if (window.projectPages && key) {
-        const clonedEntries = JSON.parse(JSON.stringify(initialEntries));
-        // ========== 兼容保留挂在数组上的 textBoxes 属性 ==========
-        if (initialEntries.textBoxes) {
-            clonedEntries.textBoxes = JSON.parse(JSON.stringify(initialEntries.textBoxes));
-        }
-
-        window.projectPages[key] = clonedEntries;
+        window.projectPages[key] = JSON.parse(JSON.stringify(initialPageData || { entries: [], textBoxes: [] }));
     }
 
     fetch('/get_image', {
@@ -223,8 +216,9 @@ function updateTextBlocks(textBlocks, pageKey) {
     textBlocks.forEach((block, index) => {
         // 从当前工作数据中获取可见性状态（优先）
         let currentVisible = block.visible;
-        if (window.projectPages?.[pageKey]?.[index]) {
-            const entry = window.projectPages[pageKey][index];
+        const pageEntries = window.projectPages?.[pageKey]?.entries;
+        if (pageEntries && pageEntries[index]) {
+            const entry = pageEntries[index];
             currentVisible = (entry.matched === 1);
         }
 
@@ -258,8 +252,9 @@ function updateTextBlocks(textBlocks, pageKey) {
                 window.canvasControls.setTextBlockVisibility(index, newVisible);
             }
             // 立即同步到工作数据
-            if (window.projectPages?.[pageKey]?.[index]) {
-                window.projectPages[pageKey][index].matched = newVisible ? 1 : 0;
+            const syncEntries = window.projectPages?.[pageKey]?.entries;
+            if (syncEntries && syncEntries[index]) {
+                syncEntries[index].matched = newVisible ? 1 : 0;
             }
         });
 
@@ -334,28 +329,15 @@ window.saveProject = function() {
 
     const directory = window.projectDirectory;
     const key = window.currentImg;
-    const entries = window.projectPages[key];
-
+    const pageData = window.projectPages[key];
+    const entries = pageData.entries;
     // ========== 持久化用户添加的文本框数据 ==========
     if (window.canvasControls?.getUserTextBoxes) {
-        window.projectPages[key].textBoxes = window.canvasControls.getUserTextBoxes();
+        pageData.textBoxes = window.canvasControls.getUserTextBoxes();
     }
-    
-    // 将 projectPages 转换为标准对象格式，防止 JSON.stringify 丢失数组上的自定义属性
-    const pagesToSave = {};
-    for (const k in window.projectPages) {
-        const pageArr = window.projectPages[k];
-        pagesToSave[k] = {
-            entries: pageArr,
-            textBoxes: pageArr.textBoxes || []
-        };
-    }
+    // 数据结构已经是统一对象，直接序列化，不再需要转换
+    const jsonPayload = { directory: directory, pages: window.projectPages, current_img: key };
 
-    const jsonPayload = {
-        directory: directory,
-        pages: pagesToSave,
-        current_img: key
-    };
 
     fetch('/save_project', {
         method: 'POST',

@@ -1153,7 +1153,8 @@ window.canvasControls = {
 
     updateCurrentPageData: function() {
         if (!window.projectPages || !window.currentImg || !CanvasState.textImages) return;
-        const entries = window.projectPages[window.currentImg];
+        const pageData = window.projectPages[window.currentImg];
+        const entries = pageData ? pageData.entries : null;
         if (!entries || entries.length !== CanvasState.textImages.length) {
             console.warn('页面条目数量不匹配，无法保存');
             return;
